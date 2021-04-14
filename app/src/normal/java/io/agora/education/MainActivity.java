@@ -10,40 +10,52 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TimePicker;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.AppCompatTextView;
 import androidx.cardview.widget.CardView;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import butterknife.OnTouch;
+import io.agora.base.callback.ThrowableCallback;
+import io.agora.base.network.RetrofitManager;
+import io.agora.download.db.DbHolder;
 import io.agora.edu.common.bean.ResponseBody;
+import io.agora.edu.common.bean.board.sceneppt.BoardCoursewareRes;
+import io.agora.edu.common.bean.board.sceneppt.SceneInfo;
+import io.agora.edu.common.service.BoardService;
 import io.agora.edu.launch.AgoraEduClassRoom;
-import io.agora.edu.launch.AgoraEduReplay;
-import io.agora.edu.launch.AgoraEduReplayConfig;
+import io.agora.edu.launch.AgoraEduCourseware;
+import io.agora.edu.launch.AgoraEduCoursewarePreloadListener;
+import io.agora.edu.launch.AgoraEduEvent;
 import io.agora.edu.launch.AgoraEduRoleType;
 import io.agora.edu.launch.AgoraEduRoomType;
 import io.agora.edu.launch.AgoraEduSDK;
 import io.agora.edu.launch.AgoraEduLaunchConfig;
 import io.agora.edu.launch.AgoraEduSDKConfig;
-import io.agora.education.fetchtoken.FetchRtmTokenUtil;
-import io.agora.education.fetchtoken.RtmTokenRes;
+import io.agora.edu.util.FileUtil;
 import io.agora.education.rtmtoken.RtmTokenBuilder;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.Response;
+import io.agora.uikit.component.dialog.AgoraUIDialog;
+import io.agora.uikit.component.dialog.AgoraUIDialogBuilder;
 
+import static io.agora.edu.BuildConfig.API_BASE_URL;
 import static io.agora.edu.launch.AgoraEduSDK.REQUEST_CODE_RTC;
+import static io.agora.edu.launch.AgoraEduSDK.DYNAMIC_URL;
+import static io.agora.edu.launch.AgoraEduSDK.PUBLIC_FILE_URL;
+import static io.agora.edu.launch.AgoraEduSDK.STATIC_URL;
 import static io.agora.education.Constants.KEY_SP;
 import static io.agora.education.EduApplication.getAppId;
 
@@ -52,22 +64,94 @@ public class MainActivity extends AppCompatActivity {
 
     @BindView(R.id.et_room_name)
     protected EditText et_room_name;
+    @BindView(R.id.et_room_uuid)
+    protected EditText et_room_uuid;
     @BindView(R.id.et_your_name)
     protected EditText et_your_name;
+    @BindView(R.id.et_your_uuid)
+    protected EditText et_your_uuid;
     @BindView(R.id.et_room_type)
     protected EditText et_room_type;
     @BindView(R.id.card_room_type)
     protected CardView card_room_type;
     @BindView(R.id.btn_join)
     protected Button btnJoin;
+    @BindView(R.id.timePicker)
+    protected TimePicker timePicker;
+    @BindView(R.id.durationEt)
+    protected EditText durationEt;
+    @BindView(R.id.configText)
+    protected AppCompatTextView configText;
+    @BindView(R.id.loadText)
+    protected AppCompatTextView loadText;
+    @BindView(R.id.clearCacheText)
+    protected AppCompatTextView clearCacheText;
 
     private String rtmToken;
+    private AgoraEduCourseware courseware;
+
+    private AgoraUIDialog mDialog;
 
     @Override
-    protected void onCreate(@androidx.annotation.Nullable Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
+
+        timePicker.setIs24HourView(true);
+        Date date = new Date(System.currentTimeMillis() + 2 * 60 * 1000);
+        timePicker.setCurrentHour(date.getHours());
+        timePicker.setCurrentMinute(date.getMinutes());
+    }
+
+    private void requestCourseware(String resourceUuid, ThrowableCallback<AgoraEduCourseware> callback) {
+        RetrofitManager.instance().getService("https://api-solutions-dev.bj2.agoralab.co", BoardService.class)
+                .getCourseware("f488493d1886435f963dfb3d95984fd4", "courseware0", "liyang1")
+                .enqueue(new RetrofitManager.Callback(0, new ThrowableCallback<ResponseBody<List<BoardCoursewareRes>>>() {
+                    @Override
+                    public void onFailure(@Nullable Throwable throwable) {
+                        Log.e(TAG, "request courseware failed!");
+                        throwable.printStackTrace();
+                        notifyBtnJoinEnable(true);
+                        callback.onFailure(throwable);
+                    }
+
+                    @Override
+                    public void onSuccess(@Nullable ResponseBody<List<BoardCoursewareRes>> res) {
+                        try {
+                            if (res.data != null && res.data.size() > 0) {
+                                BoardCoursewareRes wareRes = res.data.get(0);
+                                String scenePath, url;
+                                for (BoardCoursewareRes ware : res.data) {
+                                    if (ware.getResourceUuid().equals(resourceUuid)) {
+                                        wareRes = ware;
+                                    }
+                                }
+                                if (wareRes.getConversion().getType().equals("dynamic")) {
+                                    url = String.format(DYNAMIC_URL, wareRes.getTaskUuid());
+                                } else if (wareRes.getConversion().getType().equals("static")) {
+                                    url = String.format(STATIC_URL, wareRes.getTaskUuid());
+                                } else {
+                                    url = PUBLIC_FILE_URL;
+                                }
+                                List<SceneInfo> scenes = wareRes.getTaskProgress().getConvertedFileList();
+                                scenePath = File.separator.concat(wareRes.getResourceName())
+                                        .concat(scenes.get(0).getName());
+                                AgoraEduCourseware courseware = new AgoraEduCourseware(
+                                        wareRes.getResourceName(), scenePath, scenes, url);
+                                callback.onSuccess(courseware);
+                            } else {
+                                Log.e(TAG, "request courseware failed, response data is null!");
+                                callback.onFailure(new Throwable("request courseware failed, response data is null!"));
+                            }
+                        }
+                        catch (Exception e) {
+                            Log.e(TAG, "request courseware failed, parse response data error!");
+                            callback.onFailure(new Throwable("request courseware failed, parse response data error!"));
+                            e.printStackTrace();
+                        }
+                    }
+                }));
     }
 
     @Override
@@ -75,6 +159,11 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         int eyeCare = PreferenceManager.get(KEY_SP, false) ? 1 : 0;
         AgoraEduSDK.setConfig(new AgoraEduSDKConfig(getAppId(), eyeCare));
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
     }
 
     @Override
@@ -95,43 +184,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-//    @Override
-//    protected void onActivityResult(int requestCode, int resultCode, @androidx.annotation.Nullable Intent data) {
-//        super.onActivityResult(requestCode, resultCode, data);
-//        if (data != null && requestCode == REQUEST_CODE_RTE && resultCode == BaseClassActivity.RESULT_CODE) {
-//            int code = data.getIntExtra(CODE, -1);
-//            String reason = data.getStringExtra(REASON);
-//            String msg = String.format(getString(R.string.function_error), code, reason);
-//            AgoraLog.e(TAG, msg);
-//            ToastManager.showShort(msg);
-//        }
-//    }
-
     @OnClick({R.id.iv_setting, R.id.et_room_type, R.id.btn_join, R.id.tv_one2one, R.id.tv_small_class,
-            R.id.tv_large_class, R.id.tv_breakout_class, R.id.tv_intermediate_class})
+            R.id.tv_large_class, R.id.tv_breakout_class, R.id.tv_intermediate_class, R.id.config,
+            R.id.load, R.id.clearCache})
     public void onClick(View view) {
         switch (view.getId()) {
             case R.id.iv_setting:
                 startActivity(new Intent(this, SettingActivity.class));
                 break;
             case R.id.btn_join:
-//                AgoraEduReplayConfig config = new AgoraEduReplayConfig(1610194790798L, 1610194828584L,
-//                        "scenario/recording/f488493d1886435f963dfb3d95984fd4/5ff99f6612c83b045ed90495/6b6c425515445a49a26e29aa7a828f33_1235542.m3u8",
-//                        "", "", "",
-//                        "");
-//                AgoraEduReplay replay = AgoraEduSDK.replay(getApplicationContext(), config, state -> {
-//                    Log.e(TAG, ":replay-课堂状态:" + state.name());
-//                });
-//                new Thread(() -> {
-//                    try {
-//                        Thread.sleep(10000);
-//                        Log.e(TAG, ":replay-主动自动结束课堂");
-//                        replay.destroy();
-//                    }
-//                    catch (Exception e) {
-//                        e.printStackTrace();
-//                    }
-//                }).start();
                 if (AppUtil.isFastClick()) {
                     return;
                 }
@@ -163,6 +224,78 @@ public class MainActivity extends AppCompatActivity {
                 et_room_type.setText(R.string.intermediate);
                 card_room_type.setVisibility(View.GONE);
                 break;
+            case R.id.config:
+                if (AppUtil.isFastClick()) {
+                    return;
+                }
+                requestCourseware("large", new ThrowableCallback<AgoraEduCourseware>() {
+                    @Override
+                    public void onFailure(@Nullable Throwable throwable) {
+                        runOnUiThread(() -> configText.setText("课件配置失败"));
+                    }
+
+                    @Override
+                    public void onSuccess(@Nullable AgoraEduCourseware ware) {
+                        if (ware != null) {
+                            List<AgoraEduCourseware> wares = new ArrayList<>();
+                            wares.add(ware);
+                            AgoraEduSDK.configCoursewares(wares);
+                            runOnUiThread(() -> configText.setText("课件配置成功"));
+                        } else {
+                            runOnUiThread(() -> configText.setText("课件配置失败"));
+                        }
+                    }
+                });
+                break;
+            case R.id.load:
+                if (AppUtil.isFastClick()) {
+                    return;
+                }
+                try {
+                    AgoraEduSDK.downloadCoursewares(MainActivity.this, new AgoraEduCoursewarePreloadListener() {
+                        @Override
+                        public void onStartDownload(@NotNull AgoraEduCourseware ware) {
+                            Log.e(TAG, "onStartDownload->" + ware.getResourceUrl());
+                        }
+
+                        @Override
+                        public void onProgress(@NotNull AgoraEduCourseware ware, double progress) {
+                            Log.e(TAG, "onProgress->" + progress);
+                            progress = progress * 100;
+                            int tmp = (int) progress;
+                            runOnUiThread(() -> loadText.setText(String.format("下载进度:%d%%", tmp)));
+                        }
+
+                        @Override
+                        public void onComplete(@NotNull AgoraEduCourseware ware) {
+                            Log.e(TAG, "onComplete->" + ware.getResourceUrl());
+                            runOnUiThread(() -> loadText.setText(String.format("下载进度完成")));
+                        }
+
+                        @Override
+                        public void onFailed(@NotNull AgoraEduCourseware ware) {
+                            Log.e(TAG, "onFailed->" + ware.getResourceUrl());
+                            runOnUiThread(() -> loadText.setText(String.format("下载进度失败")));
+                        }
+                    });
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
+                }
+                break;
+            case R.id.clearCache:
+                try {
+                    File file = new File(MainActivity.this.getFilesDir().getAbsolutePath(), "board");
+                    FileUtil.deleteDirectory(file.getAbsolutePath());
+                    DbHolder dbHolder = new DbHolder(MainActivity.this);
+                    dbHolder.clear();
+                    dbHolder.close();
+                    clearCacheText.setText("缓存清理成功");
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
+                }
+                break;
             default:
                 break;
         }
@@ -185,25 +318,39 @@ public class MainActivity extends AppCompatActivity {
         String roomName = et_room_name.getText().toString();
         if (TextUtils.isEmpty(roomName)) {
             Toast.makeText(this, R.string.room_name_should_not_be_empty, Toast.LENGTH_SHORT).show();
+            notifyBtnJoinEnable(true);
+            return;
+        }
+
+        String roomUuid = et_room_uuid.getText().toString();
+        if (TextUtils.isEmpty(roomUuid)) {
+            Toast.makeText(this, R.string.room_uuid_should_not_be_empty, Toast.LENGTH_SHORT).show();
+            notifyBtnJoinEnable(true);
             return;
         }
 
         String userName = et_your_name.getText().toString();
         if (TextUtils.isEmpty(userName)) {
             Toast.makeText(this, R.string.your_name_should_not_be_empty, Toast.LENGTH_SHORT).show();
+            notifyBtnJoinEnable(true);
             return;
         }
 
-        String roomTypeStr = et_room_type.getText().toString();
-        if (TextUtils.isEmpty(roomTypeStr)) {
+        String userUuid = et_your_uuid.getText().toString();
+        if (TextUtils.isEmpty(userUuid)) {
+            Toast.makeText(this, R.string.your_uuid_should_not_be_empty, Toast.LENGTH_SHORT).show();
+            notifyBtnJoinEnable(true);
+            return;
+        }
+
+        String type = et_room_type.getText().toString();
+        if (TextUtils.isEmpty(type)) {
             Toast.makeText(this, R.string.room_type_should_not_be_empty, Toast.LENGTH_SHORT).show();
+            notifyBtnJoinEnable(true);
             return;
         }
+        int roomType = getRoomType(type);
 
-        /**userUuid和roomUuid需用户自己指定，并保证唯一性*/
-        int roomType = getClassType(roomTypeStr);
-        String userUuid = userName + AgoraEduRoleType.AgoraEduRoleTypeStudent.getValue();
-        String roomUuid = roomName + roomType;
         int roleType = AgoraEduRoleType.AgoraEduRoleTypeStudent.getValue();
         /*根据userUuid和appId签发的token*/
         rtmToken = "";
@@ -213,40 +360,58 @@ public class MainActivity extends AppCompatActivity {
             /**声网 APP Id(声网控制台获取)*/
             String appId = getAppId();
             /**声网 APP Certificate(声网控制台获取)*/
-            String appCertificate = "";
+            String appCertificate = getString(R.string.agora_app_cert);
             rtmToken = new RtmTokenBuilder().buildToken(appId, appCertificate, userUuid,
                     RtmTokenBuilder.Role.Rtm_User, 0);
 
-            AgoraEduLaunchConfig agoraEduLaunchConfig = new AgoraEduLaunchConfig(userName, userUuid,
-                    roomName, roomUuid, roleType, roomType, rtmToken);
-            AgoraEduClassRoom classRoom = AgoraEduSDK.launch(getApplicationContext(), agoraEduLaunchConfig,
-                    (state) -> {
-                        Log.e(TAG, ":launch-课堂状态:" + state.name());
-                        notifyBtnJoinEnable(true);
-                    });
-//            new Thread(() -> {
-//                try {
-//                    Thread.sleep(10000);
-//                    Log.e(TAG, ":launch-主动自动结束课堂");
-//                    classRoom.destroy();
-//                }
-//                catch (Exception e) {
-//                    e.printStackTrace();
-//                }
-//            }).start();
+            Date date1 = new Date();
+            date1.setHours(timePicker.getCurrentHour());
+            date1.setMinutes(timePicker.getCurrentMinute());
+            long startTime = date1.getTime();
+            if (startTime <= System.currentTimeMillis()) {
+                Toast.makeText(this, "开始时间必须是未来的某个时间", Toast.LENGTH_LONG).show();
+                notifyBtnJoinEnable(true);
+                return;
+            }
+            long duration = 310L;
+            if (durationEt.length() > 0) {
+                duration = Long.parseLong(durationEt.getText().toString());
+            }
+
+            AgoraEduLaunchConfig agoraEduLaunchConfig =
+                    new AgoraEduLaunchConfig(userName, userUuid, roomName,
+                            roomUuid, roleType, roomType, rtmToken,
+                            startTime, duration, false);
+
+            runOnUiThread(() -> {
+                try {
+                    AgoraEduClassRoom classRoom = AgoraEduSDK.launch(MainActivity.this,
+                            agoraEduLaunchConfig, (state) -> {
+                                Log.e(TAG, ":launch-课堂状态:" + state.name());
+                                notifyBtnJoinEnable(true);
+                                if (state == AgoraEduEvent.AgoraEduEventForbidden) {
+                                    mDialog = new AgoraUIDialogBuilder(MainActivity.this)
+                                            .title(getResources().getString(R.string.join_forbidden_title))
+                                            .message(getResources().getString(R.string.join_forbidden_message))
+                                            .positiveText(getResources().getString(R.string.join_forbidden_button_confirm))
+                                            .positiveClick(view -> {
+                                                if (mDialog != null && mDialog.isShowing()) {
+                                                    mDialog.dismiss();
+                                                    mDialog = null;
+                                                }
+                                            })
+                                            .build();
+                                    mDialog.show();
+                                }
+                            });
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
         }
         catch (Exception e) {
             e.printStackTrace();
-        }
-    }
-
-    private int getClassType(String roomTypeStr) {
-        if (roomTypeStr.equals(getString(R.string.one2one_class))) {
-            return AgoraEduRoomType.AgoraEduRoomType1V1.getValue();
-        } else if (roomTypeStr.equals(getString(R.string.small_class))) {
-            return AgoraEduRoomType.AgoraEduRoomTypeSmall.getValue();
-        } else {
-            return AgoraEduRoomType.AgoraEduRoomTypeBig.getValue();
         }
     }
 
@@ -256,6 +421,16 @@ public class MainActivity extends AppCompatActivity {
                 btnJoin.setEnabled(enable);
             }
         });
+    }
+
+    private int getRoomType(String typeName) {
+        if (typeName.equals(getString(R.string.one2one_class))) {
+            return AgoraEduRoomType.AgoraEduRoomType1V1.getValue();
+        } else if (typeName.equals(getString(R.string.small_class))) {
+            return AgoraEduRoomType.AgoraEduRoomTypeSmall.getValue();
+        } else {
+            return AgoraEduRoomType.AgoraEduRoomTypeBig.getValue();
+        }
     }
 
 }

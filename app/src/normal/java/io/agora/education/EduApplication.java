@@ -5,7 +5,9 @@ import android.text.TextUtils;
 
 import androidx.annotation.Nullable;
 
-import com.tencent.bugly.crashreport.CrashReport;
+import io.agora.edu.launch.AgoraEduSDK;
+
+//import com.tencent.bugly.crashreport.CrashReport;
 
 public class EduApplication extends Application {
     private static final String TAG = "EduApplication";
@@ -18,12 +20,11 @@ public class EduApplication extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
-
         PreferenceManager.init(this);
-
-        CrashReport.initCrashReport(getApplicationContext(), "04948355be", true);
-
         appId = getString(R.string.agora_app_id);
+//        CrashReport.initCrashReport(getApplicationContext(), "04948355be", true);
+        AgoraEduSDK.setParameters("{\"edu.apiUrl\":\"https://api-test.agora.io/preview/\"}");
+        AgoraEduSDK.setParameters("{\"edu.reportUrl\":\"https://api-test.agora.io\"}");
     }
 
     @Nullable
@@ -33,5 +34,4 @@ public class EduApplication extends Application {
         }
         return appId;
     }
-
 }

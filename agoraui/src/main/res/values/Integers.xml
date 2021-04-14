@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer-array name="agora_tool_font_sizes">
+        <item>22</item>
+        <item>24</item>
+        <item>26</item>
+        <item>30</item>
+        <item>36</item>
+        <item>42</item>
+    </integer-array>
+</resources>

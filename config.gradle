@@ -24,9 +24,9 @@ ext {
             'com.squareup.okhttp3:logging-interceptor'        : '4.7.2',
             'com.elvishew:xlog'                               : '1.6.1',
             'com.aliyun.dpa:oss-android-sdk'                  : '2.9.4',
-            'io.agora.rtc:full-sdk'                           : '2.9.0.107',
+            'io.agora.rtc:agora-special-full'                           : '2.9.107.136',
             'io.agora.rtm:rtm-sdk'                            : '1.4.1',
-            'com.github.duty-os:white-sdk-android'            : '2.9.14',
+            'com.github.duty-os:white-sdk-android'            : '2.12.18',
             'com.github.bumptech.glide:glide'                 : '4.11.0',
             'com.github.bumptech.glide:compiler'              : '4.11.0',
     ]

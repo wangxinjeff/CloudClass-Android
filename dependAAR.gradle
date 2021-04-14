@@ -1,0 +1,16 @@
+
+task dependAAR {
+    File propFile = file("gradle.properties")
+    if (propFile.exists()) {
+        def Properties props = new Properties()
+        props.load(new FileInputStream(propFile))
+        if (!props.containsKey("dependAAR")) {
+            logger.log(LogLevel.ERROR, "Property 'dependAAR' does not exist in gradle.properties!")
+        }
+        props['dependAAR'] = "true"
+        propFile.setWritable(true)
+        props.store(new FileOutputStream(propFile), "")
+    } else {
+        logger.log(LogLevel.ERROR, "gradle.properties not exists!")
+    }
+}
