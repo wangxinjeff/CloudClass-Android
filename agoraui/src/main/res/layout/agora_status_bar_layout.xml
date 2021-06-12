@@ -13,7 +13,18 @@
         android:layout_marginStart="@dimen/margin_large"
         android:layout_marginLeft="@dimen/margin_large"/>
     <androidx.appcompat.widget.AppCompatImageView
-        android:id="@+id/agora_status_bar_exit_icon"
+        android:id="@+id/agora_status_bar_upload_log_icon"
+        android:layout_width="@dimen/agora_status_bar_icon_size_smaller"
+        android:layout_height="@dimen/agora_status_bar_icon_size_smaller"
+        android:layout_centerVertical="true"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentRight="true"
+        android:layout_marginEnd="@dimen/margin_largerr"
+        android:layout_marginRight="@dimen/margin_largerr"
+        android:src="@drawable/agora_room_icon_upload_log"/>
+
+    <androidx.appcompat.widget.AppCompatImageView
+        android:id="@+id/agora_status_bar_setting_icon"
         android:layout_width="@dimen/agora_status_bar_icon_size"
         android:layout_height="@dimen/agora_status_bar_icon_size"
         android:layout_centerVertical="true"
@@ -21,7 +32,7 @@
         android:layout_alignParentRight="true"
         android:layout_marginEnd="@dimen/margin_large"
         android:layout_marginRight="@dimen/margin_large"
-        android:src="@drawable/agora_room_icon_exit"/>
+        android:src="@drawable/agora_room_icon_setting_src"/>
     <View
         android:id="@+id/agora_status_bar_center_divider"
         android:layout_width="@dimen/divider_thin"

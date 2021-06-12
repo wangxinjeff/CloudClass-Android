@@ -33,5 +33,4 @@ open class EduBaseStreamRes(
 class EduFromUserRes(
         var userUuid: String,
         var userName: String,
-        var role: String
-)
+        var role: String)

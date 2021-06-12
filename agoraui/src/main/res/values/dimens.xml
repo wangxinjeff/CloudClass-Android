@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- theme dimensions -->
+    <dimen name="margin_largerr">45dp</dimen>
     <dimen name="margin_larger">15dp</dimen>
     <dimen name="margin_large">10dp</dimen>
     <dimen name="margin_medium">8dp</dimen>
@@ -65,7 +66,7 @@
 
     <!-- Message -->
     <dimen name="agora_message_title_layout_height">48dp</dimen>
-    <dimen name="agora_message_close_icon_size">18dp</dimen>
+    <dimen name="agora_message_icon_size">28dp</dimen>
     <dimen name="agora_message_input_layout_height">60dp</dimen>
     <dimen name="agora_message_input_layout_corner">20dp</dimen>
     <dimen name="agora_message_no_content_icon_size">104dp</dimen>
@@ -79,6 +80,12 @@
     <dimen name="agora_message_unread_count_radius">6dp</dimen>
     <dimen name="agora_message_caution_height">38dp</dimen>
     <dimen name="agora_message_caution_icon_size">20dp</dimen>
+
+    <dimen name="agora_message_tab_item_margin">@dimen/margin_large</dimen>
+    <dimen name="agora_message_tab_item_padding">@dimen/margin_large</dimen>
+    <dimen name="agora_message_tab_dot_size">6dp</dimen>
+    <dimen name="agora_message_tab_indicator_stroke">3dp</dimen>
+    <dimen name="agora_message_tab_min_width">48dp</dimen>
 
     <!-- Tool Bar -->
     <dimen name="agora_tool_switch_btn_size">36dp</dimen>
@@ -116,10 +123,12 @@
     <dimen name="agora_status_bar_height">34dp</dimen>
     <dimen name="agora_status_bar_icon_size">24dp</dimen>
 
+    <dimen name="agora_status_bar_height_smaller">30dp</dimen>
+    <dimen name="agora_status_bar_icon_size_smaller">20dp</dimen>
     <!-- Setting -->
     <dimen name="agora_setting_dialog_width">292dp</dimen>
     <dimen name="agora_setting_dialog_height">264dp</dimen>
-    <dimen name="agora_setting_dialog_layout_width">280dp</dimen>
+    <dimen name="agora_setting_dialog_layout_width">286dp</dimen>
     <dimen name="agora_setting_dialog_layout_height">252dp</dimen>
     <dimen name="agora_setting_dialog_text_margin_horizontal">20dp</dimen>
     <dimen name="agora_setting_dialog_content_margin_vertical">6dp</dimen>
@@ -153,7 +162,7 @@
     <dimen name="agora_board_loading_img_w">40dp</dimen>
     <dimen name="agora_board_loading_img_h">40dp</dimen>
     <dimen name="agora_board_loading_view_corner_radius">8dp</dimen>
-    <dimen name="agora_board_loading_view_elevation">4dp</dimen>
+    <dimen name="agora_board_loading_view_elevation">2dp</dimen>
     <dimen name="agora_board_progress_view_corner_radius">8dp</dimen>
     <dimen name="agora_board_progress_view_elevation">8dp</dimen>
     <dimen name="agora_board_progress_view_padding_start">12dp</dimen>
@@ -206,6 +215,7 @@
     <dimen name="agora_video_name_margin_start">2dp</dimen>
     <dimen name="agora_video_name_margin_top">4dp</dimen>
     <dimen name="agora_video_name_text_size">12sp</dimen>
+    <dimen name="agora_video_large_tip_size">13sp</dimen>
 
     <!-- UserList -->
     <dimen name="agora_userlist_dialog_elevation">4dp</dimen>
@@ -228,5 +238,16 @@
     <!-- Reward Window -->
     <dimen name="reward_window_anim_w">80dp</dimen>
     <dimen name="reward_window_anim_h">80dp</dimen>
+
+    <!-- FullScreen Btn -->
+    <dimen name="full_screen_btn_size">60dp</dimen>
+
+    <!-- Loading Dialog -->
+    <dimen name="loading_img_width">60dp</dimen>
+    <dimen name="loading_img_height">60dp</dimen>
+    <dimen name="loading_img_padding_top">15dp</dimen>
+    <dimen name="loading_img_padding_bottom">38dp</dimen>
+    <dimen name="loading_img_padding_left">45dp</dimen>
+    <dimen name="loading_img_padding_right">45dp</dimen>
 
 </resources>

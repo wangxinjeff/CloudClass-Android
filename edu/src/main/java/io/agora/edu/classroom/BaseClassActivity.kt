@@ -2,34 +2,39 @@ package io.agora.edu.classroom
 
 import android.app.Activity
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.widget.RelativeLayout
 import androidx.core.view.ViewCompat
 import io.agora.agoraactionprocess.AgoraActionListener
 import io.agora.agoraactionprocess.AgoraActionMsgRes
 import io.agora.base.callback.Callback
+import io.agora.edu.BuildConfig
 import io.agora.edu.common.bean.response.RoomPreCheckRes
 import io.agora.edu.launch.AgoraEduEvent
 import io.agora.edu.launch.AgoraEduLaunchConfig
+import io.agora.edu.launch.AgoraEduRoleType
 import io.agora.edu.launch.AgoraEduSDK
-import io.agora.edu.util.AppUtil
 import io.agora.edu.util.AppUtil.getNavigationBarHeight
+import io.agora.edu.util.TimeUtil
 import io.agora.edu.widget.EyeProtection
 import io.agora.education.api.EduCallback
 import io.agora.education.api.base.EduError
 import io.agora.education.api.base.EduError.Companion.internalError
+import io.agora.education.api.logger.DebugItem
 import io.agora.education.api.manager.EduManager
 import io.agora.education.api.manager.listener.EduManagerEventListener
 import io.agora.education.api.message.EduActionMessage
 import io.agora.education.api.message.EduChatMsg
 import io.agora.education.api.message.EduMsg
+import io.agora.education.api.message.EduPeerChatMsg
 import io.agora.education.api.room.EduRoom
 import io.agora.education.api.room.data.*
 import io.agora.education.api.room.listener.EduRoomEventListener
+import io.agora.education.api.statistics.ConnectionState
 import io.agora.education.api.statistics.NetworkQuality
 import io.agora.education.api.stream.data.EduStreamEvent
 import io.agora.education.api.stream.data.EduStreamInfo
@@ -38,7 +43,7 @@ import io.agora.education.api.user.EduStudent
 import io.agora.education.api.user.EduUser
 import io.agora.education.api.user.data.*
 import io.agora.education.api.user.listener.EduUserEventListener
-import io.agora.education.impl.Constants
+import io.agora.education.impl.Constants.Companion.AgoraLog
 import io.agora.educontext.*
 import io.agora.educontext.context.*
 import io.agora.extapp.AgoraExtAppManager
@@ -46,6 +51,7 @@ import io.agora.extension.*
 import io.agora.privatechat.PrivateChatManager
 import io.agora.report.ReportManager.getAPaasReporter
 import io.agora.report.reporters.APaasReporter
+import io.agora.report.v2.reporter.ReporterV2
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
 import io.agora.rte.data.RteLocalVideoStats
@@ -74,10 +80,11 @@ abstract class BaseClassActivity : BaseActivity(),
     protected var preCheckData: RoomPreCheckRes? = null
     protected var eduRoom: EduRoom? = null
 
-    protected var contentLayout: ViewGroup? = null
+    protected var contentLayout: RelativeLayout? = null
 
     protected var container: IAgoraUIContainer? = null
-    protected var roomStatusManager: RoomStatusManager? = null
+    protected var roomStateManager: RoomStateManager? = null
+    protected var deviceManager: DeviceManager? = null
     protected var chatManager: ChatManager? = null
     protected var handsUpManager: HandsUpManager? = null
     protected var oneToOneVideoManager: OneToOneVideoManager? = null
@@ -88,6 +95,7 @@ abstract class BaseClassActivity : BaseActivity(),
     protected var extAppManager: AgoraExtAppManager? = null
     protected var whiteBoardManager: WhiteBoardManager? = null
     protected var whiteBoardContainer: ViewGroup? = null
+    protected var flexPropsManager: FlexPropsManager? = null
 
     protected data class JoinRoomConfiguration(
             val autoPublish: Boolean = false,
@@ -95,6 +103,9 @@ abstract class BaseClassActivity : BaseActivity(),
             val needUserListener: Boolean = false)
 
     private var joinConfig = JoinRoomConfiguration()
+
+    @Volatile
+    private var rtmConnectionState = ConnectionState.DISCONNECTED.value
 
     @Volatile
     var isJoining = false
@@ -106,6 +117,7 @@ abstract class BaseClassActivity : BaseActivity(),
     // both room and white board join successfully
     private var roomJoinSuccess = false
     private var whiteboardJoinSuccess = false
+    private var joinWhiteBoardCalled = false;
 
     @Synchronized
     protected fun processJoinSuccess(): Boolean {
@@ -154,6 +166,12 @@ abstract class BaseClassActivity : BaseActivity(),
         }
     }
 
+    private val flexManagerEventListener = object : FlexManagerEventListener {
+        override fun onGranted(userId: String): Boolean {
+            return whiteBoardManager?.isGranted(userId) ?: false
+        }
+    }
+
     private val oneToOneVideoManagerEventListener = object : OneToOneVideoManagerEventListener {
         override fun onMediaMsgUpdate(msg: String) {
             container?.showTips(msg)
@@ -174,9 +192,17 @@ abstract class BaseClassActivity : BaseActivity(),
         }
     }
 
+    protected open var deviceManagerEventListener = object : DeviceManagerEventListener {
+        override fun onCameraDeviceEnableChanged(enabled: Boolean) {
+        }
+
+        override fun onMicDeviceEnabledChanged(enabled: Boolean) {
+        }
+    }
+
     private val chatContext = object : ChatContext() {
-        override fun sendLocalMessage(message: String, timestamp: Long,
-                                      callback: EduContextCallback<EduContextChatItemSendResult>): EduContextChatItem {
+        override fun sendLocalChannelMessage(message: String, timestamp: Long,
+                                             callback: EduContextCallback<EduContextChatItemSendResult>): EduContextChatItem {
             chatManager?.sendRoomChat(message, timestamp, callback)
             return EduContextChatItem(
                     name = launchConfig?.userName ?: "",
@@ -187,9 +213,32 @@ abstract class BaseClassActivity : BaseActivity(),
                     timestamp = timestamp)
         }
 
-        override fun fetchHistory(startId: Int?, count: Int?, callback: EduContextCallback<List<EduContextChatItem>>) {
-            chatManager?.pullChatRecords(if (startId != null) "$startId" else null,
-                    count ?: 0, true, callback)
+        override fun sendConversationMessage(message: String, timestamp: Long,
+                                             callback: EduContextCallback<EduContextChatItemSendResult>): EduContextChatItem {
+            chatManager?.conversation(message, timestamp, callback)
+
+            return EduContextChatItem(
+                    name = launchConfig?.userName ?: "",
+                    uid = launchConfig?.userUuid ?: "",
+                    message = message,
+                    source = EduContextChatSource.Local,
+                    state = EduContextChatState.InProgress,
+                    timestamp = timestamp)
+        }
+
+        override fun fetchChannelHistory(startId: String?, count: Int?, callback: EduContextCallback<List<EduContextChatItem>>) {
+            // channel message ids are actually integers, and we need to calculate the
+            // previous id to pull channel history messages.
+            var id: String? = null
+            startId?.toIntOrNull()?.let {
+                id = (it - 1).toString()
+            }
+
+            chatManager?.pullChatRecords(id, count ?: 0, true, callback)
+        }
+
+        override fun fetchConversationHistory(startId: String?, callback: EduContextCallback<List<EduContextChatItem>>) {
+            chatManager?.pullConversationRecords(startId, true, callback)
         }
     }
 
@@ -199,15 +248,65 @@ abstract class BaseClassActivity : BaseActivity(),
         }
     }
 
+    private var teacherRenderMode = 0
     private val roomContext = object : RoomContext() {
+        override fun roomInfo(): EduContextRoomInfo {
+            return EduContextRoomInfo(
+                    launchConfig!!.roomUuid,
+                    launchConfig!!.roomName,
+                    EduContextRoomType.fromValue(launchConfig!!.roomType))
+        }
+
         override fun leave() {
             forceLeave(true)
+        }
+
+        override fun uploadLog() {
+            eduManager?.uploadDebugItem(DebugItem.LOG, object : EduCallback<String> {
+                override fun onSuccess(res: String?) {
+                    AgoraLog.d(tag, "log updated ->$res");
+                    if (res != null) {
+                        roomStateManager?.setUploadedLogMsg(res)
+                    }
+                }
+
+                override fun onFailure(error: EduError) {
+                    AgoraLog.e(tag, "log update failed ->${error.type}:${error.msg}");
+                }
+
+            })
+        }
+
+        override fun updateFlexRoomProps(properties: MutableMap<String, String>, cause: MutableMap<String, String>?) {
+            roomStateManager?.updateFlexProps(properties, cause)
+        }
+    }
+
+    private val deviceContext = object : DeviceContext() {
+        override fun getDeviceConfig(): EduContextDeviceConfig {
+            return deviceManager?.getDeviceConfig() ?: EduContextDeviceConfig()
+        }
+
+        override fun setCameraDeviceEnable(enable: Boolean) {
+            deviceManager?.setCameraDeviceEnable(enable)
+        }
+
+        override fun switchCameraFacing() {
+            deviceManager?.switchCameraFacing()
+        }
+
+        override fun setMicDeviceEnable(enable: Boolean) {
+            deviceManager?.setMicDeviceEnable(enable)
+        }
+
+        override fun setSpeakerEnable(enable: Boolean) {
+            deviceManager?.setSpeakerEnable(enable)
         }
     }
 
     private val screenShareContext = object : ScreenShareContext() {
-        override fun setScreenShareState(sharing: Boolean) {
-            screenShareManager?.setScreenShareState(sharing)
+        override fun setScreenShareState(state: EduContextScreenShareState) {
+            screenShareManager?.setScreenShareState(state)
         }
 
         override fun renderScreenShare(container: ViewGroup?, streamUuid: String) {
@@ -224,8 +323,17 @@ abstract class BaseClassActivity : BaseActivity(),
             userListManager?.muteLocalAudio(muted)
         }
 
-        override fun renderVideo(container: ViewGroup?, streamUuid: String) {
+        override fun renderVideo(container: ViewGroup?, streamUuid: String, renderConfig: EduContextRenderConfig) {
             userListManager?.renderContainer(container, streamUuid)
+        }
+
+        override fun updateFlexUserProps(userUuid: String, properties: MutableMap<String, String>,
+                                         cause: MutableMap<String, String>?) {
+            userListManager?.updateFlexProps(userUuid, properties, cause)
+        }
+
+        override fun setVideoConfig(config: EduContextVideoConfig) {
+            TODO("Not yet implemented")
         }
     }
 
@@ -258,7 +366,7 @@ abstract class BaseClassActivity : BaseActivity(),
             }
         }
 
-        override fun renderVideo(viewGroup: ViewGroup?, streamUuid: String) {
+        override fun renderVideo(viewGroup: ViewGroup?, streamUuid: String, renderConfig: EduContextRenderConfig) {
             when (container) {
                 is AgoraUI1v1Container -> {
                     oneToOneVideoManager?.renderVideo(viewGroup, streamUuid)
@@ -270,6 +378,10 @@ abstract class BaseClassActivity : BaseActivity(),
                     teacherVideoManager?.renderVideo(viewGroup, streamUuid)
                 }
             }
+        }
+
+        override fun setVideoConfig(config: EduContextVideoConfig) {
+            TODO("Not yet implemented")
         }
     }
 
@@ -343,29 +455,28 @@ abstract class BaseClassActivity : BaseActivity(),
             return EduContextUserInfo(
                     launchConfig!!.userUuid,
                     launchConfig!!.userName,
-                    EduContextUserRole.Student)
+                    EduContextUserRole.Student,
+                    privateChatManager?.getUserFlexProps(launchConfig!!.userUuid))
         }
 
         override fun startPrivateChat(peerId: String,
                                       callback: EduContextCallback<EduContextPrivateChatInfo>?) {
             privateChatManager?.startPrivateChat(peerId,
-                    Callback {
-                        it?.let { _ ->
+                    Callback { response ->
+                        response?.let { _ ->
                             getCurFullUser(object : EduCallback<MutableList<EduUserInfo>> {
                                 override fun onSuccess(res: MutableList<EduUserInfo>?) {
-                                    res?.forEach { user ->
-                                        if (user.userUuid == peerId) {
-                                            callback?.onSuccess(
-                                                    EduContextPrivateChatInfo(
-                                                            getLocalUserInfo(),
-                                                            EduContextUserInfo(
-                                                                    user.userUuid,
-                                                                    user.userName,
-                                                                    toEduContextUserInfo(user.role)
-                                                            )
-                                                    )
-                                            )
-                                        }
+                                    res?.find { it.userUuid == peerId }?.let { user ->
+                                        val toUserInfo = EduContextUserInfo(
+                                                user.userUuid,
+                                                user.userName,
+                                                toEduContextUserInfo(user.role),
+                                                privateChatManager?.getUserFlexProps(user.userUuid))
+                                        callback?.onSuccess(
+                                                EduContextPrivateChatInfo(
+                                                        getLocalUserInfo(),
+                                                        toUserInfo)
+                                        )
                                     }
                                 }
 
@@ -397,7 +508,7 @@ abstract class BaseClassActivity : BaseActivity(),
 
     private val extAppContext = object : ExtAppContext {
         override fun launchExtApp(appIdentifier: String): Int {
-            return extAppManager?.launchExtApp(appIdentifier)
+            return extAppManager?.launchExtApp(appIdentifier,TimeUtil.currentTimeMillis())
                     ?: AgoraExtAppErrorCode.ExtAppEngineError
         }
 
@@ -417,6 +528,10 @@ abstract class BaseClassActivity : BaseActivity(),
 
         override fun roomContext(): RoomContext {
             return roomContext
+        }
+
+        override fun deviceContext(): DeviceContext? {
+            return deviceContext
         }
 
         override fun screenShareContext(): ScreenShareContext {
@@ -450,12 +565,12 @@ abstract class BaseClassActivity : BaseActivity(),
         preCheckData = intent.getParcelableExtra(Data.precheckData)
 
         if (launchConfig == null) {
-            Constants.AgoraLog.e("$tag -> init room fail, launch config is null")
+            AgoraLog.e("$tag -> init room fail, launch config is null")
             return
         }
 
         if (preCheckData == null) {
-            Constants.AgoraLog.e("$tag -> init room fail, precheck data is null")
+            AgoraLog.e("$tag -> init room fail, precheck data is null")
             return
         }
 
@@ -467,9 +582,6 @@ abstract class BaseClassActivity : BaseActivity(),
                             config.roomType))
 
             eduRoom?.eventListener = this
-
-            chatManager = ChatManager(this, eduRoom, chatContext, config)
-            privateChatManager = PrivateChatManager(this, privateChatContext, eduRoom, config)
 
             joinConfig = onRoomJoinConfig()
             joinRoomAsStudent(
@@ -523,8 +635,20 @@ abstract class BaseClassActivity : BaseActivity(),
             override fun onSuccess(res: EduUser?) {
                 Log.e(tag, "joinRoomAsStudent-thread->${Thread.currentThread().id}")
                 if (res != null) {
+                    launchConfig?.let { config ->
+                        val streamUid = res.userInfo.streamUuid.toLongOrNull() ?: return@let
+                        reportJoinResult(
+                                config = config,
+                                streamUid = streamUid,
+                                streamSuid = res.userInfo.streamUuid)
+                    }
+
                     joinSuccess = true
                     isJoining = false
+
+                    // report rtcAppScenario
+                    eduManager?.reportAppScenario(launchConfig!!.roomType, BuildConfig.SERVICE_APAAS,
+                            BuildConfig.APAAS_VERSION)
 
                     if (needUserListener) {
                         res.eventListener = this@BaseClassActivity
@@ -537,6 +661,10 @@ abstract class BaseClassActivity : BaseActivity(),
                     val error = internalError("join failed: localUser is null")
                     callback.onFailure(error)
                     reportClassJoinSuccess("0", error.type.toString() + "", error.httpError.toString() + "")
+
+                    launchConfig?.let { config ->
+                        reportJoinResult(config = config, code = error.type)
+                    }
                 }
             }
 
@@ -544,21 +672,30 @@ abstract class BaseClassActivity : BaseActivity(),
                 isJoining = false
                 callback.onFailure(error)
                 reportClassJoinSuccess("0", error.type.toString() + "", error.httpError.toString() + "")
+
+                launchConfig?.let { config ->
+                    reportJoinResult(config = config, code = error.type)
+                }
             }
         })
+    }
+
+    private fun reportJoinResult(config: AgoraEduLaunchConfig, streamUid: Long = 0, streamSuid: String = "", code: Int = 0) {
+        val reporterV2 = ReporterV2.getReporterV2(config.vendorId)
+        reporterV2.setRoomReportInfo(BuildConfig.APAAS_VERSION, config.roomUuid,
+                config.userUuid, config.userName, streamUid, streamSuid,
+                AgoraEduRoleType.fromValue(config.roleType).toString(),
+                eduRoom!!.getRtcCallId(config.roomUuid),
+                eduRoom!!.getRtmSessionId(config.roomUuid))
+        reporterV2.reportAPaaSUserJoined(code, System.currentTimeMillis())
     }
 
     private fun initEduCapabilityManagers(config: AgoraEduLaunchConfig, preCheckData: RoomPreCheckRes) {
         whiteBoardManager!!.initBoardWithRoomToken(preCheckData.board.boardId,
                 preCheckData.board.boardToken, config.userUuid)
 
-        ChatManager(this, eduRoom, eduContext.chatContext(), config).let { manager ->
-            chatManager = manager
-            manager.initChat()
-        }
-
-        RoomStatusManager(this, eduContext.roomContext(), config, preCheckData, eduRoom).let { manager ->
-            roomStatusManager = manager
+        RoomStateManager(this, eduContext.roomContext(), config, preCheckData, eduRoom).let { manager ->
+            roomStateManager = manager
             manager.setClassName(config.roomName)
             manager.initClassState()
         }
@@ -570,7 +707,16 @@ abstract class BaseClassActivity : BaseActivity(),
         getLocalUser(object : EduCallback<EduUser?> {
             override fun onSuccess(res: EduUser?) {
                 res?.let { localUser ->
-                    TeacherVideoManager(applicationContext, config, eduRoom, localUser, videoContext).let { manager ->
+                    ChatManager(this@BaseClassActivity, eduRoom, eduContext.chatContext(),
+                            config, localUser).let { manager ->
+                        chatManager = manager
+                        manager.initChat()
+                    }
+                    privateChatManager = PrivateChatManager(this@BaseClassActivity,
+                            privateChatContext, eduRoom, config, localUser)
+
+                    TeacherVideoManager(applicationContext, config, eduRoom, localUser,
+                            videoContext).let { manager ->
                         manager.managerEventListener = teacherVideoManagerEventListener
                         teacherVideoManager = manager
                         manager.notifyUserDetailInfo(EduUserRole.STUDENT)
@@ -583,22 +729,40 @@ abstract class BaseClassActivity : BaseActivity(),
                         }
                     }
 
+                    DeviceManager(this@BaseClassActivity, config, eduRoom!!, localUser,
+                            eduContext).let {
+                        deviceManager = it
+                        it.eventListener = deviceManagerEventListener
+                        it.initDeviceConfig()
+                    }
+
                     ScreenShareManager(this@BaseClassActivity, eduContext,
                             config, eduRoom!!, localUser).let { manager ->
                         screenShareManager = manager
+                        // onRemoteRTCJoinedOfStreamId maybe called before screenShareManager is instantiated
+                        // so, when screenShareManager is instantiated, try to get the missing rtcUid from the cache
+                        manager.updateRemoteOnlineUids(localUser.cacheRemoteOnlineUids)
+                        // custom
                         manager.screenShareStateChangedListener = object : (Boolean) -> Unit {
                             override fun invoke(p1: Boolean) {
                                 teacherVideoManager?.container?.let { container ->
                                     teacherVideoManager?.videoGroupListener?.onRendererContainer(
-                                            container, teacherVideoManager!!.teacherStreamUuid)
+                                            container, teacherVideoManager!!.teacherCameraStreamUuid)
                                 }
                             }
+                        }
+                        manager.getWhiteBoardCurScenePathListener = object : () -> String? {
+                            override fun invoke(): String? {
+                                return whiteBoardManager?.getCurScenePath()
+                            }
+
                         }
                     }
 
                     OneToOneVideoManager(applicationContext, config, eduRoom!!, localUser, videoContext).let { manager ->
                         manager.managerEventListener = oneToOneVideoManagerEventListener
                         oneToOneVideoManager = manager
+                        manager.initLocalDeviceState(deviceManager!!.getDeviceConfig())
                         manager.notifyUserDetailInfo(EduUserRole.STUDENT)
                         manager.notifyUserDetailInfo(EduUserRole.TEACHER)
                     }
@@ -613,7 +777,15 @@ abstract class BaseClassActivity : BaseActivity(),
                     UserListManager(applicationContext, config, eduRoom!!, localUser, userContext).let { manager ->
                         manager.eventListener = userListManagerEventListener
                         userListManager = manager
+                        manager.initLocalDeviceState(deviceManager!!.getDeviceConfig())
                         manager.notifyUserList()
+                    }
+
+                    FlexPropsManager(this@BaseClassActivity, eduContext, config, eduRoom,
+                            localUser).let {
+                        it.eventListener = flexManagerEventListener
+                        flexPropsManager = it
+                        flexPropsManager?.initRoomFlexProps()
                     }
                 }
             }
@@ -624,8 +796,8 @@ abstract class BaseClassActivity : BaseActivity(),
         })
     }
 
-    private fun initExtAppManager(view: View, config: AgoraEduLaunchConfig) {
-        extAppManager = object : AgoraExtAppManager(config.appId, this, view, config.roomUuid) {
+    private fun initExtAppManager(layout: RelativeLayout, config: AgoraEduLaunchConfig) {
+        extAppManager = object : AgoraExtAppManager(config.appId, this, layout, config.roomUuid) {
             override fun getRoomInfo(): AgoraExtAppRoomInfo {
                 return AgoraExtAppRoomInfo(
                         config.roomUuid,
@@ -638,11 +810,15 @@ abstract class BaseClassActivity : BaseActivity(),
                         AgoraExtAppUserRole.toType(config.roleType))
             }
         }
+
+        // Explicitly call extension manager to search for
+        // extension app information.
+        extAppManager?.handleExtAppPropertyInitialized(eduRoom?.roomProperties)
     }
 
     private fun joinFailed(code: Int, reason: String) {
         val msg = "join classRoom failed->code:$code,reason:$reason"
-        Constants.AgoraLog.e(tag, msg)
+        AgoraLog.e(tag, msg)
         AgoraEduSDK.agoraEduLaunchCallback.onCallback(AgoraEduEvent.AgoraEduEventFailed)
         val intent = intent.putExtra(AgoraEduSDK.CODE, code).putExtra(AgoraEduSDK.REASON, reason)
         setResult(Data.resultCode, intent)
@@ -659,7 +835,7 @@ abstract class BaseClassActivity : BaseActivity(),
         initAndJoinRoom()
     }
 
-    protected abstract fun onContentViewLayout(): ViewGroup
+    protected abstract fun onContentViewLayout(): RelativeLayout
 
     override fun onStart() {
         super.onStart()
@@ -669,7 +845,7 @@ abstract class BaseClassActivity : BaseActivity(),
     override fun onDestroy() {
         super.onDestroy()
         privateChatManager?.dispose()
-        roomStatusManager?.dispose()
+        roomStateManager?.dispose()
         extAppManager?.dispose()
         eduRoom = null
         getEduManager()?.let {
@@ -752,13 +928,22 @@ abstract class BaseClassActivity : BaseActivity(),
             eduRoom?.leave(object : EduCallback<Unit> {
                 override fun onSuccess(res: Unit?) {
                     if (finish) {
+                        extAppManager?.dispose()
                         finish()
                     }
+
+                    val vendorId = launchConfig?.vendorId ?: -1
+                    ReporterV2.getReporterV2(vendorId)
+                            .reportAPaaSUserQuit(0, System.currentTimeMillis())
+                    ReporterV2.deleteReporterV2(vendorId)
                 }
 
                 override fun onFailure(error: EduError) {
-                    Constants.AgoraLog.e("$tag:leave EduRoom error-> " +
+                    AgoraLog.e("$tag:leave EduRoom error-> " +
                             "code: ${error.type}, reason: ${error.msg}")
+                    val vendorId = launchConfig?.vendorId ?: -1
+                    ReporterV2.getReporterV2(vendorId)
+                            .reportAPaaSUserQuit(error.type, System.currentTimeMillis())
                 }
             })
         }
@@ -827,15 +1012,15 @@ abstract class BaseClassActivity : BaseActivity(),
     }
 
     override fun onRemoteUsersJoined(users: List<EduUserInfo>, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive a callback when the remote user joined")
+        AgoraLog.e("$tag:Receive a callback when the remote user joined")
     }
 
     override fun onRemoteUserLeft(userEvent: EduUserEvent, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive a callback when the remote user left")
+        AgoraLog.e("$tag:Receive a callback when the remote user left")
     }
 
     override fun onRemoteUserUpdated(userEvent: EduUserEvent, type: EduUserStateChangeType, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive a callback when the remote user modified")
+        AgoraLog.e("$tag:Receive a callback when the remote user modified")
     }
 
     override fun onRoomMessageReceived(message: EduMsg, classRoom: EduRoom) {
@@ -847,47 +1032,79 @@ abstract class BaseClassActivity : BaseActivity(),
     }
 
     override fun onRemoteStreamsInitialized(streams: List<EduStreamInfo>, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:onRemoteStreamsInitialized")
+        AgoraLog.e("$tag:onRemoteStreamsInitialized")
     }
 
     override fun onRemoteStreamsAdded(streamEvents: MutableList<EduStreamEvent>, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive callback to add remote stream")
+        AgoraLog.e("$tag:Receive callback to add remote stream")
     }
 
     override fun onRemoteStreamUpdated(streamEvents: MutableList<EduStreamEvent>, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive callback to update remote stream")
+        AgoraLog.e("$tag:Receive callback to update remote stream")
     }
 
     override fun onRemoteStreamsRemoved(streamEvents: MutableList<EduStreamEvent>, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:Receive callback to remove remote stream")
+        AgoraLog.e("$tag:Receive callback to remove remote stream")
+    }
+
+    override fun onRemoteRTCJoinedOfStreamId(streamUuid: String) {
+        screenShareManager?.updateRemoteOnlineUids(streamUuid, true)
+        screenShareManager?.checkAndNotifyScreenShareByRTC(streamUuid)
+    }
+
+    override fun onRemoteRTCOfflineOfStreamId(streamUuid: String) {
+        screenShareManager?.updateRemoteOnlineUids(streamUuid, false)
+        screenShareManager?.checkAndNotifyScreenShareByRTC(streamUuid)
     }
 
     override fun onRoomStatusChanged(type: EduRoomChangeType, operatorUser: EduUserInfo?, classRoom: EduRoom) {
         chatManager?.notifyMuteChatStatus(type)
     }
 
-    override fun onRoomPropertiesChanged(classRoom: EduRoom, cause: MutableMap<String, Any>?) {
-        Constants.AgoraLog.e("$tag:Received callback of roomProperty change")
+    override fun onRoomPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                         classRoom: EduRoom, cause: MutableMap<String, Any>?,
+                                         operator: EduBaseUserInfo?) {
+        AgoraLog.e("$tag:Received callback of roomProperty change")
         extAppManager?.handleRoomPropertiesChange(classRoom.roomProperties, cause)
+        screenShareManager?.checkAndNotifyScreenShareByProperty(cause)
+        flexPropsManager?.notifyRoomFlexProps(changedProperties, cause, operator)
     }
 
     override fun onNetworkQualityChanged(quality: NetworkQuality, user: EduBaseUserInfo, classRoom: EduRoom) {
         if (user.userUuid == launchConfig?.userUuid) {
-            roomStatusManager?.updateNetworkState(quality)
+            roomStateManager?.updateNetworkState(quality)
         }
     }
 
-    override fun onConnectionStateChanged(state: EduContextConnectionState, classRoom: EduRoom) {
-        Constants.AgoraLog.e("$tag:onConnectionStateChanged-> " +
-                "${state.name}, room: ${launchConfig?.roomUuid}")
-        roomStatusManager?.updateConnectionState(state)
+    override fun onConnectionStateChanged(s: ConnectionState, classRoom: EduRoom) {
+        AgoraLog.e("$tag:onConnectionStateChanged-> " +
+                "${s.name}, room: ${launchConfig?.roomUuid}")
+        val state = EduContextConnectionState.convert(s.value)
+        roomStateManager?.updateConnectionState(state)
+        // when reconnected, need sync deviceConfig to remote.
+        if (roomStateManager?.isReconnected(state) == true) {
+            deviceManager?.syncDeviceConfig()
+        }
 
         if (state == EduContextConnectionState.Aborted) {
+            rtmConnectionState = s.value
             forceLeave(true)
+            return
         }
+
+        if (state == EduContextConnectionState.Connected) {
+            if (rtmConnectionState == EduContextConnectionState.Reconnecting.value) {
+                ReporterV2.getReporterV2(launchConfig!!.vendorId)
+                        .reportAPpaSUserReconnect(0, System.currentTimeMillis())
+            }
+        }
+        rtmConnectionState = s.value
     }
 
     override fun onRemoteVideoStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
+    }
+
+    override fun onRemoteAudioStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
     }
 
     override fun onRemoteVideoStats(stats: RteRemoteVideoStats) {
@@ -896,6 +1113,9 @@ abstract class BaseClassActivity : BaseActivity(),
 
     override fun onLocalVideoStateChanged(localVideoState: Int, error: Int) {
 
+    }
+
+    override fun onLocalAudioStateChanged(localAudioState: Int, error: Int) {
     }
 
     override fun onLocalVideoStats(stats: RteLocalVideoStats) {
@@ -915,18 +1135,21 @@ abstract class BaseClassActivity : BaseActivity(),
     }
 
     override fun onLocalStreamAdded(streamEvent: EduStreamEvent) {
-        Constants.AgoraLog.e("$tag:Receive callback to add local stream")
+        AgoraLog.e("$tag:Receive callback to add local stream")
         when (streamEvent.modifiedStream.videoSourceType) {
             VideoSourceType.CAMERA -> {
-                Constants.AgoraLog.e("$tag:Receive callback to add local camera stream")
+                AgoraLog.e("$tag:Receive callback to add local camera stream")
             }
             VideoSourceType.SCREEN -> {
             }
         }
+        // 如果上次有业务流(而且音视频都都打开，但是关闭了cameraDevice/micDevice),当退出重新进入教室的时候，
+        // RTE发现存在一条本地流，就会重新enableLocalMedia、publish并回调此函数，故在此做拦截(检查设备是否被关闭并调用enableLocaMedia)
+        deviceManager?.checkDeviceConfig()
     }
 
     override fun onLocalStreamUpdated(streamEvent: EduStreamEvent) {
-        Constants.AgoraLog.e("$tag:Receive callback to update local stream")
+        AgoraLog.e("$tag:Receive callback to update local stream")
         when (streamEvent.modifiedStream.videoSourceType) {
             VideoSourceType.CAMERA -> {
             }
@@ -936,7 +1159,7 @@ abstract class BaseClassActivity : BaseActivity(),
     }
 
     override fun onLocalStreamRemoved(streamEvent: EduStreamEvent) {
-        Constants.AgoraLog.e("$tag:Receive callback to remove local stream")
+        AgoraLog.e("$tag:Receive callback to remove local stream")
         when (streamEvent.modifiedStream.videoSourceType) {
             VideoSourceType.CAMERA -> {
             }
@@ -955,8 +1178,8 @@ abstract class BaseClassActivity : BaseActivity(),
 
     }
 
-    override fun onUserChatMessageReceived(chatMsg: EduChatMsg) {
-
+    override fun onUserChatMessageReceived(chatMsg: EduPeerChatMsg) {
+        chatManager?.receiveConversationMessage(chatMsg)
     }
 
     override fun onUserActionMessageReceived(actionMessage: EduActionMessage) {
@@ -983,11 +1206,16 @@ abstract class BaseClassActivity : BaseActivity(),
 
     }
 
-    override fun onRemoteUserPropertiesChanged(classRoom: EduRoom, userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-
+    override fun onRemoteUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                               classRoom: EduRoom, userInfo: EduUserInfo,
+                                               cause: MutableMap<String, Any>?,
+                                               operator: EduBaseUserInfo?) {
+        flexPropsManager?.notifyUserFlexProps(userInfo, changedProperties, cause, operator)
     }
 
-    override fun onLocalUserPropertiesChanged(userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-
+    override fun onLocalUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                              userInfo: EduUserInfo, cause: MutableMap<String, Any>?,
+                                              operator: EduBaseUserInfo?) {
+        flexPropsManager?.notifyUserFlexProps(userInfo, changedProperties, cause, operator)
     }
 }

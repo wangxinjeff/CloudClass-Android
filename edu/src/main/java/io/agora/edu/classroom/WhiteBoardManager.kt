@@ -8,10 +8,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.*
 import com.google.gson.Gson
 import com.herewhite.sdk.*
 import com.herewhite.sdk.domain.*
@@ -31,6 +28,7 @@ import io.agora.edu.launch.AgoraEduRegionStr.na
 import io.agora.edu.launch.AgoraEduSDK
 import io.agora.edu.util.ColorUtil
 import io.agora.education.impl.Constants
+import io.agora.educontext.EduBoardRoomPhase
 import io.agora.educontext.WhiteboardApplianceType
 import io.agora.educontext.WhiteboardDrawingConfig
 import io.agora.educontext.context.WhiteboardContext
@@ -39,8 +37,10 @@ import io.agora.whiteboard.netless.listener.BoardEventListener
 import io.agora.whiteboard.netless.listener.GlobalStateChangeListener
 import io.agora.whiteboard.netless.manager.BoardProxy
 import org.json.JSONObject
+import wendu.dsbridge.DWebView
 import java.io.File
 
+@SuppressLint("ClickableViewAccessibility")
 class WhiteBoardManager(
         val context: Context,
         val launchConfig: AgoraEduLaunchConfig,
@@ -58,7 +58,7 @@ class WhiteBoardManager(
     private var localUserUuid: String? = null
     private val miniScale = 0.1
     private val maxScale = 10.0
-    private val scaleStepper = 0.2
+    private val scaleStepper = 0.1
     private var curBoardState: BoardState? = null
     private var curGranted: Boolean = false
     private var curGrantedUsers = mutableListOf<String>()
@@ -70,7 +70,8 @@ class WhiteBoardManager(
     private var courseware: AgoraEduCourseware? = null
     private val defaultCoursewareName = "init"
     private var scenePpts: Array<Scene?>? = null
-//    private var loadPreviewPpt: Boolean = true
+
+    //        private var loadPreviewPpt: Boolean = true
     private var loadPreviewPpt: Boolean = false
     private var lastSceneDir: String? = null
     private var inputTips = false
@@ -106,18 +107,20 @@ class WhiteBoardManager(
     }
 
     init {
+        DWebView.setWebContentsDebuggingEnabled(true)
+        whiteBoardView.setBackgroundColor(0)
         whiteBoardView.settings.allowFileAccessFromFileURLs = true
         whiteBoardView.webViewClient = webViewClient
         whiteBoardView.setOnTouchListener(onTouchListener)
-        whiteBoardView.addOnLayoutChangeListener { v: View?, left: Int, top: Int, right: Int,
-                                                   bottom: Int, oldLeft: Int, oldTop: Int,
-                                                   oldRight: Int, oldBottom: Int ->
-            if (context is Activity && (context.isFinishing) ||
-                    (context as Activity).isDestroyed) {
-                return@addOnLayoutChangeListener
-            }
-            boardProxy.refreshViewSize()
-        }
+//        whiteBoardView.addOnLayoutChangeListener { v: View?, left: Int, top: Int, right: Int,
+//                                                   bottom: Int, oldLeft: Int, oldTop: Int,
+//                                                   oldRight: Int, oldBottom: Int ->
+//            if (context is Activity && (context.isFinishing) ||
+//                    (context as Activity).isDestroyed) {
+//                return@addOnLayoutChangeListener
+//            }
+//            boardProxy.refreshViewSize()
+//        }
         whiteboardContext.getHandlers()?.forEach {
             it.onDrawingEnabled(!boardProxy.isDisableDeviceInputs)
             it.onPagingEnabled(!boardProxy.isDisableDeviceInputs)
@@ -175,7 +178,7 @@ class WhiteBoardManager(
                     Constants.AgoraLog.e(tag + ":then->" + phase.name)
                     if (phase != RoomPhase.connected) {
                         whiteboardContext.getHandlers()?.forEach {
-                            it.onLoadingVisible(true)
+                            it.onBoardPhaseChanged(EduBoardRoomPhase.disconnected)
                         }
                         val params = RoomParams(uuid, boardToken)
                         params.cameraBound = CameraBound(miniScale, maxScale)
@@ -207,6 +210,12 @@ class WhiteBoardManager(
             it.onPagingEnabled(!disabled)
         }
         boardProxy.disableDeviceInputs(disabled)
+        // 未授权时禁止点击h5的翻页按钮/授权时可以点击
+        whiteBoardView.evaluateJavascript("javascript: (function() {\n" +
+                "    room.getInvisiblePlugin(\"IframeBridge\") && room.getInvisiblePlugin(\"IframeBridge\").computedZindex();\n" +
+                "    room.getInvisiblePlugin(\"IframeBridge\") && room.getInvisiblePlugin(\"IframeBridge\").updateStyle();\n" +
+                "    console.log(\"getInvisiblePlugin-computedZindex-updateStyle\");\n" +
+                "})();")
     }
 
     fun disableCameraTransform(disabled: Boolean) {
@@ -235,6 +244,10 @@ class WhiteBoardManager(
 
     fun isGranted(userUuid: String): Boolean {
         return curBoardState?.isGranted(userUuid) ?: false
+    }
+
+    fun getCurScenePath(): String? {
+        return curSceneState?.scenePath
     }
 
     fun releaseBoard() {
@@ -299,11 +312,17 @@ class WhiteBoardManager(
             WhiteboardApplianceType.Text -> {
                 Appliance.TEXT
             }
+            WhiteboardApplianceType.Clicker -> {
+                Appliance.CLICKER
+            }
         }
     }
 
     private fun applianceConvert(appliance: String): WhiteboardApplianceType {
         return when (appliance) {
+            Appliance.CLICKER -> {
+                WhiteboardApplianceType.Clicker
+            }
             SELECTOR -> {
                 WhiteboardApplianceType.Select
             }
@@ -326,7 +345,7 @@ class WhiteBoardManager(
                 WhiteboardApplianceType.Text
             }
             else -> {
-                WhiteboardApplianceType.Select
+                WhiteboardApplianceType.Clicker
             }
         }
     }
@@ -344,7 +363,7 @@ class WhiteBoardManager(
         if (!TextUtils.isEmpty(boardProxy.appliance)) {
             onApplianceSelected(curDrawingConfig.activeAppliance)
         } else {
-            onApplianceSelected(WhiteboardApplianceType.Select)
+            onApplianceSelected(WhiteboardApplianceType.Clicker)
         }
         if (boardProxy.strokeColor != null) {
             onColorSelected(curDrawingConfig.color)
@@ -360,6 +379,33 @@ class WhiteBoardManager(
             onThicknessSelected(curDrawingConfig.thick)
         } else {
             onThicknessSelected(context.resources.getInteger(R.integer.agora_board_default_thickness))
+        }
+    }
+
+    private fun downloadCourseware(state: SceneState?) {
+        var curDownloadUrl: String
+        val resourceUuid = state!!.scenePath.split(File.separator.toRegex()).toTypedArray()[1]
+        if (resourceUuid == defaultCoursewareName) {
+            cancelCurPreloadBySwitchScene()
+        } else if (resourceUuid == courseware?.resourceUuid) {
+            cancelCurPreloadBySwitchScene()
+            /**Open the download(the download module will check whether it exists locally)*/
+            courseware?.resourceUrl?.let {
+                curDownloadUrl = it
+                boardPreloadManager?.preload(curDownloadUrl)
+            }
+        } else if (curBoardState != null && curBoardState!!.materialList != null) {
+            for (taskInfo in curBoardState!!.materialList) {
+                if (taskInfo.resourceUuid == resourceUuid && !TextUtils.isEmpty(resourceUuid)
+                        && !TextUtils.isEmpty(taskInfo.taskUuid) && taskInfo.ext == BoardExt.pptx) {
+                    Constants.AgoraLog.e("$tag:Start to download the courseware set by the teacher0")
+                    cancelCurPreloadBySwitchScene()
+                    /**Open the download(the download module will check whether it exists locally)*/
+                    curDownloadUrl = String.format(AgoraEduSDK.DYNAMIC_URL, taskInfo.taskUuid)
+                    Constants.AgoraLog.e("$tag:Start to download the courseware set by the teacher1")
+                    boardPreloadManager?.preload(curDownloadUrl)
+                }
+            }
         }
     }
 
@@ -406,7 +452,7 @@ class WhiteBoardManager(
     override fun onJoinFail(error: SDKError?) {
         whiteBoardManagerEventListener?.onWhiteBoardJoinFail(error)
         whiteboardContext.getHandlers()?.forEach {
-            it.onLoadingVisible(false)
+            it.onBoardPhaseChanged(EduBoardRoomPhase.disconnected)
         }
     }
 
@@ -417,7 +463,7 @@ class WhiteBoardManager(
             initWhiteBoardAppliance()
         }
         whiteboardContext.getHandlers()?.forEach {
-            it.onLoadingVisible(phase != RoomPhase.connected)
+            it.onBoardPhaseChanged(EduBoardRoomPhase.convert(phase.name))
         }
     }
 
@@ -425,6 +471,7 @@ class WhiteBoardManager(
         var download = false
         state?.let {
             curSceneState = state
+            whiteBoardManagerEventListener?.onSceneChanged(it)
             val index: Int = curSceneState!!.scenePath.lastIndexOf(File.separator)
             val dir: String = curSceneState!!.scenePath.substring(0, index)
             if (TextUtils.isEmpty(lastSceneDir)) {
@@ -436,30 +483,7 @@ class WhiteBoardManager(
             }
         }
         if (download) {
-            var curDownloadUrl: String
-            val resourceName = state!!.scenePath.split(File.separator.toRegex()).toTypedArray()[1]
-            if (resourceName == defaultCoursewareName) {
-                cancelCurPreloadBySwitchScene()
-            } else if (resourceName == courseware?.resourceName) {
-                cancelCurPreloadBySwitchScene()
-                /**Open the download(the download module will check whether it exists locally)*/
-                courseware?.resourceUrl?.let {
-                    curDownloadUrl = it
-                    boardPreloadManager?.preload(curDownloadUrl)
-                }
-            } else if (curBoardState != null && curBoardState!!.materialList != null) {
-                for (taskInfo in curBoardState!!.materialList) {
-                    if (taskInfo.resourceName == resourceName && !TextUtils.isEmpty(resourceName)
-                            && !TextUtils.isEmpty(taskInfo.taskUuid) && taskInfo.ext == BoardExt.pptx) {
-                        Constants.AgoraLog.e("$tag:Start to download the courseware set by the teacher0")
-                        cancelCurPreloadBySwitchScene()
-                        /**Open the download(the download module will check whether it exists locally)*/
-                        curDownloadUrl = String.format(AgoraEduSDK.DYNAMIC_URL, taskInfo.taskUuid)
-                        Constants.AgoraLog.e("$tag:Start to download the courseware set by the teacher1")
-                        boardPreloadManager?.preload(curDownloadUrl)
-                    }
-                }
-            }
+            downloadCourseware(state)
         }
         Constants.AgoraLog.e("$tag:onSceneStateChanged->${Gson().toJson(state)}")
         whiteboardContext.getHandlers()?.forEach { handler ->
@@ -488,11 +512,15 @@ class WhiteBoardManager(
             val latestBoardState = state as BoardState
             if (latestBoardState.isFullScreen == curBoardState?.isFullScreen) {
             } else if (latestBoardState!!.isFullScreen) {
+                // when board`s size changed, scalePptToFit
+                boardProxy.scalePptToFit()
                 whiteboardContext.getHandlers()?.forEach {
                     it.onFullScreenChanged(true)
                     it.onFullScreenEnabled(false)
                 }
             } else if (!latestBoardState!!.isFullScreen) {
+                // when board`s size changed, scalePptToFit
+                boardProxy.scalePptToFit()
                 whiteboardContext.getHandlers()?.forEach {
                     it.onFullScreenChanged(false)
                     it.onFullScreenEnabled(true)
@@ -505,8 +533,8 @@ class WhiteBoardManager(
             if (!curBoardState!!.isTeacherFirstLogin && courseware != null && scenePpts != null
                     && loadPreviewPpt) {
                 loadPreviewPpt = false
-                boardProxy.putScenes(File.separator + courseware?.resourceName, scenePpts!!, 0)
-                boardProxy.setScenePath(File.separator + courseware?.resourceName + File.separator
+                boardProxy.putScenes(File.separator + courseware?.resourceUuid, scenePpts!!, 0)
+                boardProxy.setScenePath(File.separator + courseware?.resourceUuid + File.separator
                         + scenePpts!![0]!!.name, object : Promise<Boolean> {
                     override fun then(t: Boolean) {
                         Constants.AgoraLog.e("$tag:setScenePath->$t")
@@ -628,6 +656,8 @@ class WhiteBoardManager(
 
     fun onBoardFullScreen(full: Boolean) {
         Log.e(tag, "onFullScreen->$full")
+        // when board`s size changed, scalePptToFit
+        boardProxy.scalePptToFit()
         whiteboardContext.getHandlers()?.forEach {
             it.onFullScreenChanged(full)
         }
@@ -666,6 +696,8 @@ interface WhiteBoardManagerEventListener {
     fun onWhiteBoardJoinSuccess(config: WhiteboardDrawingConfig)
 
     fun onWhiteBoardJoinFail(error: SDKError?)
+
+    fun onSceneChanged(state: SceneState)
 
     fun onGrantedChanged()
 }

@@ -1,6 +1,7 @@
 package io.agora.educontext.eventHandler
 
 import android.view.ViewGroup
+import io.agora.educontext.EduBoardRoomPhase
 import io.agora.educontext.WhiteboardDrawingConfig
 
 interface IWhiteboardHandler {
@@ -54,7 +55,7 @@ interface IWhiteboardHandler {
      */
     fun onInteractionEnabled(enabled: Boolean)
 
-    fun onLoadingVisible(visible: Boolean)
+    fun onBoardPhaseChanged(phase: EduBoardRoomPhase)
 
     fun onDownloadProgress(url: String, progress: Float)
 

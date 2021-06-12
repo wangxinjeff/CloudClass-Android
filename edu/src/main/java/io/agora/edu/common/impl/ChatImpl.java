@@ -16,6 +16,9 @@ import io.agora.edu.common.bean.request.ChatTranslateReq;
 import io.agora.edu.common.bean.response.ChatRecordItem;
 import io.agora.edu.common.bean.response.ChatRecordRes;
 import io.agora.edu.common.bean.response.ChatTranslateRes;
+import io.agora.edu.common.bean.response.ConversationRecordItem;
+import io.agora.edu.common.bean.response.ConversationRecordRes;
+import io.agora.edu.common.bean.response.ConversationRes;
 import io.agora.edu.common.bean.response.SendChatRes;
 import io.agora.edu.common.service.ChatService;
 import io.agora.edu.launch.AgoraEduSDK;
@@ -66,6 +69,36 @@ public class ChatImpl extends Base implements Chat {
     }
 
     @Override
+    public void conversation(@NotNull String userUuid, @NotNull String message, EduCallback<String> callback) {
+        EduRoomChatMsgReq req = new EduRoomChatMsgReq(message, EduChatMsgType.Text.getValue());
+        RetrofitManager.instance().getService(AgoraEduSDK.baseUrl(), ChatService.class)
+                .conversation(appId, roomUuid, userUuid, req)
+                .enqueue(new Callback<ConversationRes>() {
+                    @Override
+                    @EverythingIsNonNull
+                    public void onResponse(Call<ConversationRes> call, Response<ConversationRes> response) {
+                        ConversationRes res = response.body();
+                        if (res != null && res.getCode() == 0) {
+                            callback.onSuccess(res.getData().getPeerMessageId());
+                        } else {
+                            callback.onFailure(EduError.Companion.customMsgError("response is null"));
+                        }
+                    }
+
+                    @Override
+                    @EverythingIsNonNull
+                    public void onFailure(Call<ConversationRes> call, Throwable t) {
+                        if (t instanceof BusinessException) {
+                            BusinessException e = (BusinessException) t;
+                            callback.onFailure(new EduError(e.getCode(), e.getMessage()));
+                        } else {
+                            callback.onFailure(EduError.Companion.customMsgError(t.getMessage()));
+                        }
+                    }
+                });
+    }
+
+    @Override
     public void translate(@NotNull ChatTranslateReq req, EduCallback<ChatTranslateRes> callback) {
         RetrofitManager.instance().getService(AgoraEduSDK.baseUrl(), ChatService.class)
                 .translate(appId, req)
@@ -92,14 +125,14 @@ public class ChatImpl extends Base implements Chat {
     }
 
     @Override
-    public void pullRecords(@Nullable String nextId, int count,
-                            boolean reverse, EduCallback<List<ChatRecordItem>> callback) {
+    public void pullRoomChatRecords(@Nullable String nextId, int count,
+                                    boolean reverse, EduCallback<List<ChatRecordItem>> callback) {
         RetrofitManager.instance().getService(AgoraEduSDK.baseUrl(), ChatService.class)
                 .pullChatRecords(appId, roomUuid, count, nextId, reverse ? 0 : 1)
                 .enqueue(new RetrofitManager.Callback<>(0, new ThrowableCallback<ResponseBody<ChatRecordRes>>() {
                     @Override
                     public void onFailure(@Nullable Throwable throwable) {
-                        if(throwable instanceof BusinessException) {
+                        if (throwable instanceof BusinessException) {
                             BusinessException e = (BusinessException) throwable;
                             callback.onFailure(new EduError(e.getCode(), e.getMessage()));
                         } else {
@@ -113,6 +146,34 @@ public class ChatImpl extends Base implements Chat {
                             callback.onSuccess(res.data.getList());
                         } else {
                             callback.onFailure(EduError.Companion.customMsgError("response is null"));
+                        }
+                    }
+                }));
+    }
+
+    @Override
+    public void pullConversationRecords(@Nullable String nextId, String userUuid,
+                                        boolean reverse, EduCallback<List<ConversationRecordItem>> callback) {
+        RetrofitManager.instance().getService(AgoraEduSDK.baseUrl(), ChatService.class)
+                .pullConversationRecords(appId, roomUuid, userUuid, nextId, reverse ? 0 : 1)
+                .enqueue(new RetrofitManager.Callback<>(0,
+                        new ThrowableCallback<ResponseBody<ConversationRecordRes>>() {
+                    @Override
+                    public void onSuccess(@Nullable ResponseBody<ConversationRecordRes> res) {
+                        if (res != null && res.data != null) {
+                            callback.onSuccess(res.data.getList());
+                        } else {
+                            callback.onFailure(EduError.Companion.customMsgError("response is null"));
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(@Nullable Throwable throwable) {
+                        if (throwable instanceof BusinessException) {
+                            BusinessException e = (BusinessException) throwable;
+                            callback.onFailure(new EduError(e.getCode(), e.getMessage()));
+                        } else {
+                            callback.onFailure(EduError.Companion.customMsgError(throwable.getMessage()));
                         }
                     }
                 }));

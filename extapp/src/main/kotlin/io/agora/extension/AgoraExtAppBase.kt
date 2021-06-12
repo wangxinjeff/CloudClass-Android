@@ -1,17 +1,17 @@
 package io.agora.extension
 
 import android.util.Log
-import android.view.View
-import androidx.annotation.IdRes
 import androidx.annotation.UiThread
 
 abstract class AgoraExtAppBase : IAgoraExtApp {
     private val tag = "AgoraExtAppBase"
     protected var engine: AgoraExtAppEngine? = null
     protected var extAppContext: AgoraExtAppContext? = null
+    protected var identifier: String? = null
 
     internal fun init(identifier: String, engine: AgoraExtAppEngine) {
         this.engine = engine
+        this.identifier = identifier
 
         engine.getRegisteredExtApp(identifier)?.let { item ->
             AgoraExtAppContext(
@@ -36,9 +36,10 @@ abstract class AgoraExtAppBase : IAgoraExtApp {
      */
     fun updateProperties(properties: MutableMap<String, Any?>,
                          cause: MutableMap<String, Any?>,
+                         common: MutableMap<String, Any?>?,
                          callback: AgoraExtAppCallback<String>? = null) {
         extAppContext?.let { context ->
-            engine?.updateExtAppProperties(context.appIdentifier, properties, cause, callback)
+            engine?.updateExtAppProperties(context.appIdentifier, properties, cause, common, callback)
             return@updateProperties
         }
 
@@ -99,27 +100,6 @@ abstract class AgoraExtAppBase : IAgoraExtApp {
 
     open fun onPropertiesUpdate(properties: MutableMap<String, Any>, cause: MutableMap<String, Any>?) {
 
-    }
-
-    // update extAppContext info
-    internal fun updateLocalUserInfo(userInfo: AgoraExtAppUserInfo) {
-//        extAppContext.localUserInfo = AgoraExtAppUserInfo(
-//                userInfo.userUuid, userInfo.userName, userInfo.userRole)
-//        onLocalUserInfoUpdate(userInfo)
-    }
-
-    internal fun updateProperties(properties: MutableMap<String, Any>?,
-                                  cause: MutableMap<String, Any>?) {
-//        extAppContext.properties.clear()
-//        properties?.let {
-//            extAppContext.properties.putAll(properties)
-//        }
-//        onPropertiesUpdate(extAppContext.properties, cause)
-    }
-
-    internal fun updateRoomInfo(roomInfo: AgoraExtAppRoomInfo) {
-//        extAppContext.roomInfo = AgoraExtAppRoomInfo(roomInfo.roomUuid, roomInfo.roomName, roomInfo.roomType)
-//        onRoomInfoUpdate(roomInfo)
     }
 }
 

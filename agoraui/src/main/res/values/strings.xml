@@ -11,6 +11,7 @@
     <string name="agora_board_preload_failed_view_close">Close</string>
     <string name="agora_board_preload_failed_view_retry">Retry</string>
     <string name="agora_board_loading">Loading...</string>
+    <string name="agora_board_reconnect">Reconnecting...</string>
 
     <!--  Toast  -->
     <string name="agora_toast_board_permission_true">You can now use the whiteboard tools</string>
@@ -18,6 +19,7 @@
 
     <!--  Dialog  -->
     <string name="agora_dialog_end_class_confirm_title">Quit</string>
+    <string name="agora_dialog_sent_log_success">Logs sent successfully!</string>
     <string name="agora_dialog_end_class_confirm_message">Are you sure you want to exit the classroom?</string>
     <string name="agora_dialog_kicked_title">Kicked</string>
     <string name="agora_dialog_kicked_message">You have been kicked out of the classroom.</string>
@@ -35,16 +37,25 @@
     <string name="agora_setting_leave">Leave</string>
 
     <!-- Chat -->
-    <string name="agora_message_title">Message</string>
+    <string name="agora_chat_tab_message">Message</string>
+    <string name="agora_chat_tab_private">Question</string>
     <string name="agora_message_none_text">No Message</string>
     <string name="agora_message_send">Send</string>
     <string name="agora_message_input_hint">Input</string>
     <string name="agora_message_item_error_text" translatable="false">!</string>
     <string name="agora_message_student_chat_mute_tips">Student is forbidden to send chat</string>
     <string name="agora_message_student_chat_mute_hint">Mute chat</string>
+    <string name="agora_message_item_role_tip" translatable="false">[%s]</string>
+    <string name="agora_message_item_role_assistant">Assistant</string>
+
+    <string name="agora_message_chat_student_ban_local">You were silenced by %s</string>
+    <string name="agora_message_chat_student_ban_remote">%s was silenced by %s</string>
+    <string name="agora_message_chat_student_allow_local">You were allowed to chat by %s</string>
+    <string name="agora_message_chat_student_allow_remote">%s was allowed to chat by %s</string>
 
     <!-- Video -->
     <string name="agora_video_reward" translatable="false">X%d</string>
+    <string name="agora_video_large_tip">Maximize live model</string>
 
     <!-- UserList -->
     <string name="agora_userlist_dialog_title">Member List</string>
@@ -54,6 +65,7 @@
     <string name="agora_userlist_table_title_access">Auth</string>
     <string name="agora_userlist_table_title_camera">Camera</string>
     <string name="agora_userlist_table_title_mic">Mute</string>
+    <string name="agora_userlist_table_title_silence">Silence</string>
     <string name="agora_userlist_table_title_reward">Rewards</string>
 
     <!-- HandsUp -->

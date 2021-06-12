@@ -2,25 +2,33 @@ package io.agora.uikit.impl.container
 
 import android.content.res.Resources
 import android.graphics.Rect
+import android.view.View
 import android.view.ViewGroup
 import io.agora.educontext.EduContextPool
 import io.agora.educontext.EduContextUserDetailInfo
+import io.agora.educontext.EduContextUserInfo
 import io.agora.educontext.EduContextVideoMode
+import io.agora.uicomponent.UiWidgetManager
 import io.agora.uikit.R
+import io.agora.uikit.educontext.handlers.RoomHandler
 import io.agora.uikit.educontext.handlers.UserHandler
 import io.agora.uikit.impl.chat.AgoraUIChatWindow
 import io.agora.uikit.impl.chat.OnChatWindowAnimateListener
-import io.agora.uikit.impl.handsup.AgoraUIHandsUp
+import io.agora.uikit.impl.loading.AgoraUILoading
 import io.agora.uikit.impl.room.AgoraUIRoomStatus
+import io.agora.uikit.impl.screenshare.AgoraUIFullScreenBtn
 import io.agora.uikit.impl.screenshare.AgoraUIScreenShare
 import io.agora.uikit.impl.tool.AgoraUIToolBarBuilder
 import io.agora.uikit.impl.tool.AgoraUIToolType
 import io.agora.uikit.impl.users.*
+import io.agora.uikit.impl.video.AgoraUITeacherLargeVideo
 import io.agora.uikit.impl.video.AgoraUIVideoGroup
 import io.agora.uikit.impl.whiteboard.AgoraUIWhiteBoardBuilder
 import io.agora.uikit.impl.whiteboard.paging.AgoraUIPagingControlBuilder
 
-class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(eduContext) {
+class AgoraUILargeClassContainer(
+        eduContext: EduContextPool?,
+        configs: AgoraContainerConfig) : AbsUIContainer(eduContext, configs) {
     private val tag = "AgoraUILargeClassContainer"
 
     private var statusBarHeight = 0
@@ -54,6 +62,8 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
 
     private var isFullScreen = false
 
+    private val widgetManager = UiWidgetManager()
+
     private val largeContainerUserHandler = object : UserHandler() {
         override fun onCoHostListUpdated(list: MutableList<EduContextUserDetailInfo>) {
             super.onCoHostListUpdated(list)
@@ -67,10 +77,12 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
                 whiteboardWindow?.setRect(whiteboardDefaultRect)
                 screenShareWindow?.setRect(whiteboardDefaultRect)
                 toolbar?.setVerticalPosition(toolbarTopHasStudent, toolbarHeightHasStudent)
+                agoraUILoading?.setRect(whiteboardDefaultRect)
             } else {
                 whiteboardWindow?.setRect(whiteboardNoStudentVideoRect)
                 screenShareWindow?.setRect(whiteboardNoStudentVideoRect)
                 toolbar?.setVerticalPosition(toolbarTopNoStudent, toolbarHeightNoStudent)
+                agoraUILoading?.setRect(whiteboardNoStudentVideoRect)
             }
         }
 
@@ -79,6 +91,50 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
             kickOut()
         }
     }
+
+    private val roomHandler = object : RoomHandler() {
+        override fun onFlexRoomPropsInitialized(properties: MutableMap<String, Any>) {
+            super.onFlexRoomPropsInitialized(properties)
+            val tmp = properties["teacherRenderMode"] ?: "0"
+            val teacherRenderMode = tmp.toString().toFloat().toInt()
+            if (teacherRenderMode == 0) {
+                pageControlWindow?.setVisibility(View.VISIBLE)
+                toolbar?.setSelfVisibility(true)
+                whiteboardWindow?.setVisibility(View.VISIBLE)
+            } else {
+                pageControlWindow?.setVisibility(View.GONE)
+                toolbar?.setSelfVisibility(false)
+                fullScreenBtn?.setVisibility(View.GONE)
+                whiteboardWindow?.setVisibility(View.GONE)
+            }
+        }
+
+        override fun onFlexRoomPropsChanged(changedProperties: MutableMap<String, Any>,
+                                            properties: MutableMap<String, Any>,
+                                            cause: MutableMap<String, Any>?,
+                                            operator: EduContextUserInfo?) {
+            super.onFlexRoomPropsChanged(changedProperties, properties, cause, operator)
+            if (cause != null && cause.isNotEmpty()) {
+                val causeType = cause["cause"].toString().toFloat().toInt()
+                if (causeType == 0) {
+                    val tmp = properties["teacherRenderMode"] ?: "0"
+                    val teacherRenderMode = tmp.toString().toFloat().toInt()
+                    if (teacherRenderMode == 0) {
+                        pageControlWindow?.setVisibility(View.VISIBLE)
+                        toolbar?.setSelfVisibility(true)
+                        whiteboardWindow?.setVisibility(View.VISIBLE)
+                    } else {
+                        pageControlWindow?.setVisibility(View.GONE)
+                        toolbar?.setSelfVisibility(false)
+                        fullScreenBtn?.setVisibility(View.GONE)
+                        whiteboardWindow?.setVisibility(View.GONE)
+                    }
+                }
+            }
+        }
+    }
+
+    private var teacherLargeVideo: AgoraUITeacherLargeVideo? = null
 
     override fun init(layout: ViewGroup, left: Int, top: Int, width: Int, height: Int) {
         super.init(layout, left, top, width, height)
@@ -118,6 +174,14 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         val whiteboardW = width - teacherVideoW - margin - border
         val whiteboardH = height - statusBarHeight - margin - border
 
+        screenShareWindow = AgoraUIScreenShare(layout.context, getEduContext(), layout,
+                whiteboardW, whiteboardH, border, statusBarHeight + margin, 0f)
+        screenShareWindow!!.setContainer(this)
+
+        teacherLargeVideo = AgoraUITeacherLargeVideo(layout.context, getEduContext(), layout, border,
+                statusBarHeight + margin, whiteboardW, whiteboardH, 0f)
+        teacherLargeVideo!!.setContainer(this)
+
         // Rect when student video list is shown
         whiteboardDefaultRect.set(border, studentVideoTop + studentVideoHeight + margin,
                 whiteboardW, height - border)
@@ -126,13 +190,10 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         whiteboardWindow = AgoraUIWhiteBoardBuilder(layout.context, getEduContext(), layout)
                 .width(whiteboardW)
                 .height(whiteboardH)
+                .left(border.toFloat())
                 .top(statusBarHeight + margin.toFloat())
                 .shadowWidth(0f).build()
         whiteboardWindow!!.setContainer(this)
-
-        screenShareWindow = AgoraUIScreenShare(layout.context, getEduContext(), layout,
-                whiteboardW, whiteboardH, border, statusBarHeight + margin, 0f)
-        screenShareWindow!!.setContainer(this)
 
         val pagingControlHeight = layout.context.resources.getDimensionPixelSize(R.dimen.agora_paging_control_height)
         val pagingControlLeft = componentMargin
@@ -144,6 +205,14 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
                 .shadowWidth(shadow.toFloat())
                 .build()
         pageControlWindow!!.setContainer(this)
+
+        val fullScreenBtnWidth = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnHeight = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnLeft = 0
+        val fullScreenBtnTop = height - fullScreenBtnHeight - border
+        fullScreenBtn = AgoraUIFullScreenBtn(layout.context, getEduContext(), layout,
+                fullScreenBtnWidth, fullScreenBtnHeight, fullScreenBtnLeft, fullScreenBtnTop)
+        fullScreenBtn!!.setContainer(this)
 
         toolbarTopNoStudent = whiteboardNoStudentVideoRect.top + componentMargin
         toolbarTopHasStudent = whiteboardDefaultRect.top + componentMargin
@@ -164,8 +233,11 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         val chatTop = teacherVideoTop + teacherVideoH + margin
         val chatHeight = height - chatTop - border
         chatRect.set(chatLeft, chatTop, chatLeft + teacherVideoW, chatTop + chatHeight)
-        chatWindow = AgoraUIChatWindow(layout, getEduContext(), teacherVideoW, chatHeight, chatLeft, chatTop, shadow)
+
+        chatWindow = widgetManager.create(UiWidgetManager.DefaultWidgetId.Chat.name, getEduContext()) as? AgoraUIChatWindow
         chatWindow?.let {
+            it.setTabConfig(config.chatTabConfigs)
+            it.init(layout, teacherVideoW, chatHeight, chatLeft, chatTop)
             it.setContainer(this)
             it.setClosable(false)
             it.showShadow(false)
@@ -186,7 +258,6 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         val chatFullScreenHideTop = chatFullScreenBottom - chatWindow?.hideIconSize!!
         val chatFullScreenHideLeft = chatFullScreenRight - chatWindow?.hideIconSize!!
         chatFullScreenHideRect.set(chatFullScreenHideLeft, chatFullScreenHideTop, chatFullScreenRight, chatFullScreenBottom)
-
         chatWindow!!.setAnimateListener(object : OnChatWindowAnimateListener {
             private var lastLeft = 0
 
@@ -215,19 +286,26 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
             }
         })
 
-        val handsUpWidth = layout.context.resources.getDimensionPixelSize(R.dimen.agora_hands_up_view_w)
-        val handsUpHeight = layout.context.resources.getDimensionPixelSize(R.dimen.agora_hands_up_view_h)
-        val handsUpTop = height - margin - handsUpHeight
-        val handsUpLeft = whiteboardDefaultRect.right - margin - handsUpWidth
-        handsUpRect.set(handsUpLeft, handsUpTop, handsUpLeft + handsUpWidth, handsUpTop + handsUpHeight)
-        handsUpWindow = AgoraUIHandsUp(layout.context, getEduContext(), layout, handsUpLeft, handsUpTop, handsUpWidth, handsUpHeight)
-        handsUpWindow!!.setContainer(this)
-        handsUpFullScreenRect.set(chatFullScreenHideLeft - margin - handsUpWidth, handsUpTop,
-                chatFullScreenHideLeft - margin, handsUpTop + handsUpHeight)
+//        val handsUpWidth = layout.context.resources.getDimensionPixelSize(R.dimen.agora_hands_up_view_w)
+//        val handsUpHeight = layout.context.resources.getDimensionPixelSize(R.dimen.agora_hands_up_view_h)
+//        val handsUpTop = height - margin - handsUpHeight
+//        val handsUpLeft = whiteboardDefaultRect.right - margin - handsUpWidth
+//        handsUpRect.set(handsUpLeft, handsUpTop, handsUpLeft + handsUpWidth, handsUpTop + handsUpHeight)
+//        handsUpWindow = AgoraUIHandsUp(layout.context, getEduContext(), layout, handsUpLeft, handsUpTop, handsUpWidth, handsUpHeight)
+//        handsUpWindow!!.setContainer(this)
+//        handsUpFullScreenRect.set(chatFullScreenHideLeft - margin - handsUpWidth, handsUpTop,
+//                chatFullScreenHideLeft - margin, handsUpTop + handsUpHeight)
 
+        // add loading(show/hide follow rtmConnectionState)
+        agoraUILoading = AgoraUILoading(layout, whiteboardDefaultRect)
+
+        // toolbar monitors the rosterDismiss event for restore Status of itemSelected
+        AgoraUIRoster.dismissListener = toolbar?.rosterDismissListener
         roster = AgoraUIRoster(getEduContext())
         roster!!.setContainer(this)
+
         getEduContext()?.userContext()?.addHandler(largeContainerUserHandler)
+        getEduContext()?.roomContext()?.addHandler(roomHandler)
     }
 
     override fun resize(layout: ViewGroup, left: Int, top: Int, width: Int, height: Int) {
@@ -278,7 +356,13 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         val whiteboardTop = if (studentVideoGroup?.isShown() == true) whiteboardDefaultRect.top else
             statusBarHeight + margin
         whiteboardWindow?.let {
-            rect = Rect(0, whiteboardTop, whiteboardW, whiteboardH + whiteboardTop)
+            rect = Rect(border, whiteboardTop, whiteboardW, whiteboardH + whiteboardTop)
+            it.setRect(rect)
+        }
+
+        teacherLargeVideo?.let {
+            rect = Rect(border, statusBarHeight + margin, whiteboardW + border,
+                    whiteboardH + statusBarHeight + margin)
             it.setRect(rect)
         }
 
@@ -293,6 +377,16 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         val pagingControlTop = height - pagingControlHeight - border - componentMargin
         pageControlWindow?.let {
             rect = Rect(pagingControlLeft, pagingControlTop, 0, pagingControlHeight + pagingControlTop)
+            it.setRect(rect)
+        }
+
+        val fullScreenBtnWidth = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnHeight = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnLeft = 0
+        val fullScreenBtnTop = height - fullScreenBtnHeight - border
+        fullScreenBtn?.let {
+            rect = Rect(fullScreenBtnLeft, fullScreenBtnTop, fullScreenBtnLeft + fullScreenBtnWidth,
+                    fullScreenBtnTop + fullScreenBtnHeight)
             it.setRect(rect)
         }
 
@@ -359,15 +453,18 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
             handsUpWindow?.setRect(handsUpFullScreenRect)
             handsUpAnimateRect = Rect(handsUpFullScreenRect)
             toolbar?.setVerticalPosition(toolbarTopNoStudent, toolbarHeightNoStudent)
+            agoraUILoading?.setRect(whiteboardFullScreenRect)
         } else {
             if (studentVideoGroup!!.isShown()) {
                 whiteboardWindow?.setRect(whiteboardDefaultRect)
                 screenShareWindow?.setRect(whiteboardDefaultRect)
                 toolbar?.setVerticalPosition(toolbarTopHasStudent, toolbarHeightHasStudent)
+                agoraUILoading?.setRect(whiteboardDefaultRect)
             } else {
                 whiteboardWindow?.setRect(whiteboardNoStudentVideoRect)
                 screenShareWindow?.setRect(whiteboardNoStudentVideoRect)
                 toolbar?.setVerticalPosition(toolbarTopNoStudent, toolbarHeightNoStudent)
+                agoraUILoading?.setRect(whiteboardNoStudentVideoRect)
             }
             chatWindow?.let {
                 it.setFullscreenRect(false, chatRect)
@@ -401,6 +498,11 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
         }
     }
 
+    override fun release() {
+        chatWindow?.release()
+        widgetManager.release()
+    }
+
     override fun willLaunchExtApp(appIdentifier: String): Int {
         return 0
     }
@@ -420,15 +522,18 @@ class AgoraUILargeClassContainer(eduContext: EduContextPool?) : AbsUIContainer(e
             handsUpWindow?.setRect(rect)
             handsUpAnimateRect = rect
             toolbar?.setVerticalPosition(toolbarTopNoStudent, toolbarHeightNoStudent)
+            agoraUILoading?.setRect(whiteboardFullScreenRect)
         } else {
             if (studentVideoGroup!!.isShown()) {
                 whiteboardWindow?.setRect(whiteboardDefaultRect)
                 screenShareWindow?.setRect(whiteboardDefaultRect)
                 toolbar?.setVerticalPosition(toolbarTopHasStudent, toolbarHeightHasStudent)
+                agoraUILoading?.setRect(whiteboardDefaultRect)
             } else {
                 whiteboardWindow?.setRect(whiteboardNoStudentVideoRect)
                 screenShareWindow?.setRect(whiteboardNoStudentVideoRect)
                 toolbar?.setVerticalPosition(toolbarTopNoStudent, toolbarHeightNoStudent)
+                agoraUILoading?.setRect(whiteboardNoStudentVideoRect)
             }
 
             chatWindow?.setFullscreenRect(fullScreen, chatRect)

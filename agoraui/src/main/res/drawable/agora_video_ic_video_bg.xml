@@ -3,6 +3,7 @@
 
     <item android:state_enabled="true" android:state_selected="true" android:drawable="@drawable/agora_video_ic_video_on"/>
     <item android:state_enabled="true" android:state_selected="false" android:drawable="@drawable/agora_video_ic_video_off"/>
-    <item android:state_enabled="false" android:drawable="@drawable/agora_video_ic_video_disable"/>
+    <item android:state_enabled="false" android:state_selected="true" android:drawable="@drawable/agora_video_ic_video_enable"/>
+    <item android:drawable="@drawable/agora_video_ic_video_disable"/>
 
 </selector>

@@ -4,10 +4,13 @@ import android.content.Context
 import android.text.TextUtils
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.agora.edu.R
-import io.agora.edu.classroom.bean.PropertyCauseType
+import io.agora.edu.classroom.bean.PropertyData
+import io.agora.edu.classroom.bean.PropertyData.FLEX
 import io.agora.edu.common.api.RoomPre
-import io.agora.edu.common.bean.roompre.LocalDeviceState
+import io.agora.edu.common.bean.request.DeviceStateUpdateReq
+import io.agora.edu.common.bean.roompre.DeviceStateBean
 import io.agora.edu.common.impl.RoomPreImpl
 import io.agora.edu.launch.AgoraEduLaunchConfig
 import io.agora.education.api.EduCallback
@@ -22,13 +25,13 @@ import io.agora.education.api.user.data.EduBaseUserInfo
 import io.agora.education.api.user.data.EduUserInfo
 import io.agora.education.api.user.data.EduUserRole
 import io.agora.education.impl.Constants
-import io.agora.educontext.DeviceState
-import io.agora.educontext.EduContextUserDetailInfo
-import io.agora.educontext.EduContextUserInfo
-import io.agora.educontext.EduContextUserRole
+import io.agora.educontext.*
+import io.agora.rte.data.RteLocalAudioState
 import io.agora.rte.data.RteLocalVideoState
+import io.agora.rte.data.RteRemoteAudioState
 import io.agora.rte.data.RteRemoteVideoState
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 
 open class BaseManager(
         protected val context: Context,
@@ -38,11 +41,22 @@ open class BaseManager(
 ) {
     open var tag = "BaseManager"
 
-    // Reported by remote users;key: userUuid, value: whether of the camera available
-    private val remoteCameraStateMap: MutableMap<String, Int> = ConcurrentHashMap()
-    private var localCameraState = RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_STOPPED.value
+    // Reported by remote users;key: userUuid, value: 0:UnAvailable 1:Available 2:Closed
+    private val remoteCameraDeviceStateMap: MutableMap<String, Int> = ConcurrentHashMap()
+    private var localCameraRteState = RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_STOPPED.value
+
+    @Volatile
+    private var localCameraDeviceState: Int? = null
+
+    // Reported by remote users;key: userUuid, value: 0:UnAvailable 1:Available 2:Closed
+    private val remoteMicDeviceStateMap: MutableMap<String, Int> = ConcurrentHashMap()
+    private var localMicRteState = RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_STOPPED.value
+
+    @Volatile
+    private var localMicDeviceState: Int? = null
+
     protected var localStream: EduStreamInfo? = null
-    private val roomPre: RoomPre
+    protected val roomPre: RoomPre
 
     protected var baseManagerEventListener: BaseManagerEventListener? = null
 
@@ -52,77 +66,6 @@ open class BaseManager(
 
     fun dispose() {
         eduRoom = null
-    }
-
-    protected fun getProperty(properties: Map<String, Any>?, key: String): String? {
-        if (properties != null) {
-            for ((key1, value) in properties) {
-                if (key1 == key) {
-                    return Gson().toJson(value)
-                }
-            }
-        }
-        return null
-    }
-
-    protected fun userRoleConvert(role: EduUserRole): EduContextUserRole {
-        return when (role) {
-            EduUserRole.TEACHER -> EduContextUserRole.Teacher
-            EduUserRole.STUDENT -> EduContextUserRole.Student
-            EduUserRole.ASSISTANT -> EduContextUserRole.Assistant
-            else -> EduContextUserRole.Teacher
-        }
-    }
-
-    protected fun userInfoConvert(info: EduBaseUserInfo): EduContextUserInfo {
-        return EduContextUserInfo(info.userUuid, info.userName, userRoleConvert(info.role))
-    }
-
-    public fun muteLocalAudio(isMute: Boolean) {
-        if (localStream != null) {
-            switchLocalVideoAudio(localStream!!.hasVideo, !isMute)
-        }
-    }
-
-    public fun muteLocalVideo(isMute: Boolean) {
-        if (localStream != null) {
-            switchLocalVideoAudio(!isMute, localStream!!.hasAudio)
-        }
-    }
-
-    protected fun switchLocalVideoAudio(openVideo: Boolean, openAudio: Boolean) {
-        if (localStream == null) {
-            Log.w(tag, "switch local video/audio fail because cannot find local camera stream")
-            return
-        }
-
-        // Update local stream state and then sync the states to remote server
-        eduUser.initOrUpdateLocalStream(LocalStreamInitOptions(localStream!!.streamUuid,
-                openVideo, openAudio), object : EduCallback<EduStreamInfo> {
-            override fun onSuccess(res: EduStreamInfo?) {
-                eduUser.muteStream(res!!, object : EduCallback<Boolean> {
-                    override fun onSuccess(res: Boolean?) {}
-                    override fun onFailure(error: EduError) {}
-                })
-            }
-
-            override fun onFailure(error: EduError) {}
-        })
-    }
-
-    private fun localVideoIsMuted(): Boolean {
-        return if (localStream == null) {
-            false
-        } else {
-            !localStream!!.hasVideo
-        }
-    }
-
-    fun updateLocalCameraState(state: Int) {
-        this.localCameraState = state
-        val cameraUnavailable = state == RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_FAILED.value
-                && !localVideoIsMuted()
-        roomPre.updateCameraState(launchConfig.userUuid, !cameraUnavailable)
     }
 
     protected fun getCurRoomFullUser(callback: EduCallback<MutableList<EduUserInfo>>) {
@@ -157,43 +100,159 @@ open class BaseManager(
         })
     }
 
-    protected fun getRemoteVideoState(streamUuid: String): Int {
+    protected fun getProperty(properties: Map<String, Any>?, key: String): String? {
+        if (properties != null) {
+            for ((key1, value) in properties) {
+                if (key1 == key) {
+                    return Gson().toJson(value)
+                }
+            }
+        }
+        return null
+    }
+
+    fun getUserFlexProps(userUuid: String): MutableMap<String, String>? {
+        val lock = CountDownLatch(1)
+        var result: MutableMap<String, String>? = null
+        getCurRoomFullUser(object : EduCallback<MutableList<EduUserInfo>> {
+            override fun onSuccess(res: MutableList<EduUserInfo>?) {
+                res?.find { it.userUuid == userUuid }?.let {
+                    result = it.userProperties[FLEX] as? MutableMap<String, String>
+                }
+                lock.countDown()
+            }
+
+            override fun onFailure(error: EduError) {
+                lock.countDown()
+            }
+        })
+        try {
+            lock.await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
+    }
+
+    protected fun userRoleConvert(role: EduUserRole): EduContextUserRole {
+        return when (role) {
+            EduUserRole.TEACHER -> EduContextUserRole.Teacher
+            EduUserRole.STUDENT -> EduContextUserRole.Student
+            EduUserRole.ASSISTANT -> EduContextUserRole.Assistant
+            else -> EduContextUserRole.Teacher
+        }
+    }
+
+    protected fun userInfoConvert(info: EduBaseUserInfo): EduContextUserInfo {
+        return EduContextUserInfo(info.userUuid, info.userName, userRoleConvert(info.role),
+                getUserFlexProps(info.userUuid))
+    }
+
+    fun muteLocalAudio(isMute: Boolean) {
+        if (localStream != null) {
+            switchLocalVideoAudio(localStream!!.hasVideo, !isMute)
+        }
+    }
+
+    fun muteLocalVideo(isMute: Boolean) {
+        if (localStream != null) {
+            switchLocalVideoAudio(!isMute, localStream!!.hasAudio)
+        }
+    }
+
+    private fun switchLocalVideoAudio(openVideo: Boolean, openAudio: Boolean) {
+        if (localStream == null) {
+            Log.w(tag, "switch local video/audio fail because cannot find local camera stream")
+            return
+        }
+
+        // Update local stream state and then sync the states to remote server
+        eduUser.initOrUpdateLocalStream(LocalStreamInitOptions(localStream!!.streamUuid,
+                openVideo, openAudio), object : EduCallback<EduStreamInfo> {
+            override fun onSuccess(res: EduStreamInfo?) {
+                eduUser.muteStream(res!!, object : EduCallback<Boolean> {
+                    override fun onSuccess(res: Boolean?) {}
+                    override fun onFailure(error: EduError) {}
+                })
+            }
+
+            override fun onFailure(error: EduError) {}
+        })
+    }
+
+
+    private fun localVideoIsMuted(): Boolean {
+        return if (localStream == null) {
+            false
+        } else {
+            !localStream!!.hasVideo
+        }
+    }
+
+    private fun localAudioIsMuted(): Boolean {
+        return if (localStream == null) {
+            false
+        } else {
+            !localStream!!.hasAudio
+        }
+    }
+
+
+    fun updateLocalCameraSwitchState(closed: Boolean) {
+        getLocalCameraDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                val value = if (closed) 2 else 1
+                localCameraDeviceState = value
+                Log.e(tag, "updateLocalCameraSwitchState->$localCameraDeviceState")
+                roomPre.updateDeviceState(launchConfig.userUuid, DeviceStateUpdateReq(camera = value))
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    fun updateLocalCameraAvailableState(state: Int) {
+        getLocalCameraDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                if (res == EduContextDeviceState.Closed.value) {
+                    return
+                }
+                Log.e(tag, "updateLocalCameraAvailableState->$localCameraDeviceState")
+                localCameraRteState = state
+                val cameraUnavailable = state == RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_FAILED.value
+                        && !localVideoIsMuted()
+                val value = if (cameraUnavailable) 0 else 1
+                roomPre.updateDeviceState(launchConfig.userUuid, DeviceStateUpdateReq(camera = value))
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    private fun getRemoteVideoRteState(streamUuid: String): Int {
         return eduUser.cachedRemoteVideoStates[streamUuid]
                 ?: RteRemoteVideoState.REMOTE_VIDEO_STATE_FROZEN.value
     }
 
-    fun updateRemoteCameraState(userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-        val curUserProperties: Map<String, Any> = userInfo.userProperties
-        if (cause != null && cause.isNotEmpty()) {
-            val causeType = cause[PropertyCauseType.CMD].toString().toFloat().toInt()
-            if (causeType == PropertyCauseType.CAMERA_STATE) {
-                val deviceJson: String? = getProperty(curUserProperties, LocalDeviceState.DEVICES)
-                if (!TextUtils.isEmpty(deviceJson)) {
-                    val state: LocalDeviceState = Gson().fromJson(deviceJson, LocalDeviceState::class.java)
-                    state?.let {
-                        remoteCameraStateMap[userInfo.userUuid] = it.camera
-                    }
-                }
-            }
-        }
-    }
-
-    protected fun getRemoteCameraState(userUuid: String, callback: EduCallback<Int>) {
-        val state = remoteCameraStateMap[userUuid]
+    private fun getRemoteCameraDeviceState(userUuid: String, callback: EduCallback<Int>) {
+        val state = remoteCameraDeviceStateMap[userUuid]
         if (state == null) {
             getCurRoomFullUser(object : EduCallback<MutableList<EduUserInfo>> {
                 override fun onSuccess(res: MutableList<EduUserInfo>?) {
                     res?.forEach {
                         if (it.userUuid == userUuid) {
-                            val deviceJson: String? = getProperty(it.userProperties, LocalDeviceState.DEVICES)
+                            val deviceJson: String? = getProperty(it.userProperties, DeviceStateBean.DEVICES)
                             if (!TextUtils.isEmpty(deviceJson)) {
-                                val deviceState: LocalDeviceState? = Gson().fromJson(deviceJson, LocalDeviceState::class.java)
-                                deviceState?.let {
-                                    remoteCameraStateMap[userUuid] = deviceState.camera
-                                    callback.onSuccess(deviceState.camera)
+                                val deviceStateBean: DeviceStateBean? = Gson().fromJson(deviceJson, DeviceStateBean::class.java)
+                                deviceStateBean?.let {
+                                    remoteCameraDeviceStateMap[userUuid] = deviceStateBean.camera
+                                            ?: EduContextDeviceState.Available.value
+                                    callback.onSuccess(deviceStateBean.camera)
                                 }
                             } else {
-                                callback.onSuccess(LocalDeviceState.AVAILABLE)
+                                callback.onSuccess(EduContextDeviceState.Available.value)
                             }
                             return@forEach
                         }
@@ -208,53 +267,319 @@ open class BaseManager(
         }
     }
 
-    protected fun notifyUserDeviceState(info: EduContextUserDetailInfo, callback: EduCallback<Unit>) {
-        if (info.user.userUuid == launchConfig.userUuid) {
-            // Local
-            // Temporarily default microphone available
-            info.microState = DeviceState.Available
-            // Determine if the camera is available
-            if (info.enableVideo) {
-                if (localCameraState == RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_FAILED.value) {
-                    info.cameraState = DeviceState.UnAvailable
-                } else {
-                    info.cameraState = DeviceState.Available
-                }
-            } else {
-                info.cameraState = DeviceState.Available
-            }
-            callback.onSuccess(Unit)
-        } else {
-            // Remote
-            // Temporarily default microphone available
-            info.microState = DeviceState.Available
-            // Determine if the camera is available
-            if (info.enableVideo) {
-                val state = getRemoteVideoState(info.streamUuid)
-                if (state == RteRemoteVideoState.REMOTE_VIDEO_STATE_FROZEN.value ||
-                        state == RteRemoteVideoState.REMOTE_VIDEO_STATE_STOPPED.value) {
-                    getRemoteCameraState(info.user.userUuid, object : EduCallback<Int> {
-                        override fun onSuccess(cameraState: Int?) {
-                            if (cameraState == LocalDeviceState.UNAVAILABLE) {
-                                info.cameraState = DeviceState.UnAvailable
+    @Synchronized
+    private fun getLocalCameraDeviceState(callback: EduCallback<Int>) {
+        if (localCameraDeviceState == null) {
+            getCurRoomFullUser(object : EduCallback<MutableList<EduUserInfo>> {
+                override fun onSuccess(res: MutableList<EduUserInfo>?) {
+                    res?.forEach {
+                        if (it.userUuid == launchConfig.userUuid) {
+                            val deviceJson: String? = getProperty(it.userProperties, DeviceStateBean.DEVICES)
+                            if (!TextUtils.isEmpty(deviceJson)) {
+                                val deviceStateBean: DeviceStateBean? = Gson().fromJson(deviceJson, DeviceStateBean::class.java)
+                                deviceStateBean?.let {
+                                    localCameraDeviceState = deviceStateBean.camera
+                                            ?: EduContextDeviceState.Available.value
+                                    callback.onSuccess(localCameraDeviceState)
+                                }
                             } else {
-                                info.cameraState = DeviceState.Available
+                                callback.onSuccess(EduContextDeviceState.Available.value)
                             }
-                            callback.onSuccess(Unit)
+                            return@forEach
                         }
-
-                        override fun onFailure(error: EduError) {
-                        }
-                    })
-                } else {
-                    info.cameraState = DeviceState.Available
-                    callback.onSuccess(Unit)
+                    }
                 }
-            } else {
-                info.cameraState = DeviceState.Available
-                callback.onSuccess(Unit)
+
+                override fun onFailure(error: EduError) {
+                }
+            })
+        } else {
+            callback.onSuccess(localCameraDeviceState)
+        }
+    }
+
+    fun updateLocalMicSwitchState(closed: Boolean) {
+        getLocalMicDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                val value = if (closed) 2 else 1
+                localMicDeviceState = value
+                Log.e(tag, "updateLocalMicSwitchState->$value")
+                roomPre.updateDeviceState(launchConfig.userUuid, DeviceStateUpdateReq(mic = value))
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    fun updateLocalMicAvailableState(state: Int) {
+        getLocalMicDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                Log.e(tag, "updateLocalMicAvailableState1->$res")
+                if (res == EduContextDeviceState.Closed.value) {
+                    return
+                }
+                Log.e(tag, "updateLocalMicAvailableState2->$state")
+                localMicRteState = state
+                val micUnavailable = state == RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_FAILED.value
+                        && !localAudioIsMuted()
+                val value = if (micUnavailable) 0 else 1
+                roomPre.updateDeviceState(launchConfig.userUuid, DeviceStateUpdateReq(mic = value))
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    private fun getRemoteAudioRteState(streamUuid: String): Int {
+        return eduUser.cachedRemoteAudioStates[streamUuid]
+                ?: RteRemoteAudioState.REMOTE_AUDIO_STATE_FROZEN.value
+    }
+
+    private fun getRemoteMicDeviceState(userUuid: String, callback: EduCallback<Int>) {
+        val state = remoteMicDeviceStateMap[userUuid]
+        if (state == null) {
+            getCurRoomFullUser(object : EduCallback<MutableList<EduUserInfo>> {
+                override fun onSuccess(res: MutableList<EduUserInfo>?) {
+                    res?.find { it.userUuid == userUuid }?.let {
+                        val deviceJson: String? = getProperty(it.userProperties, DeviceStateBean.DEVICES)
+                        if (!TextUtils.isEmpty(deviceJson)) {
+                            val deviceStateBean: DeviceStateBean? = Gson().fromJson(deviceJson, DeviceStateBean::class.java)
+                            remoteMicDeviceStateMap[userUuid] = deviceStateBean?.mic
+                                    ?: EduContextDeviceState.Available.value
+                            callback.onSuccess(remoteMicDeviceStateMap[userUuid])
+                        } else {
+                            callback.onSuccess(EduContextDeviceState.Available.value)
+                        }
+                    }
+                }
+
+                override fun onFailure(error: EduError) {
+                }
+            })
+        } else {
+            callback.onSuccess(state)
+        }
+    }
+
+    @Synchronized
+    private fun getLocalMicDeviceState(callback: EduCallback<Int>) {
+        if (localMicDeviceState == null) {
+            getCurRoomFullUser(object : EduCallback<MutableList<EduUserInfo>> {
+                override fun onSuccess(res: MutableList<EduUserInfo>?) {
+                    res?.find { it.userUuid == launchConfig.userUuid }?.let {
+                        val deviceJson: String? = getProperty(it.userProperties, DeviceStateBean.DEVICES)
+                        if (!TextUtils.isEmpty(deviceJson)) {
+                            val deviceStateBean: DeviceStateBean? = Gson().fromJson(deviceJson, DeviceStateBean::class.java)
+                            deviceStateBean?.let {
+                                localMicDeviceState = deviceStateBean.mic
+                                        ?: EduContextDeviceState.Available.value
+                                callback.onSuccess(localMicDeviceState)
+                            }
+                        } else {
+                            callback.onSuccess(EduContextDeviceState.Available.value)
+                        }
+                    }
+                }
+
+                override fun onFailure(error: EduError) {
+                }
+            })
+        } else {
+            callback.onSuccess(localMicDeviceState)
+        }
+    }
+
+    fun updateRemoteDeviceState(userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
+        val curUserProperties = userInfo.userProperties
+        if (cause != null && cause.isNotEmpty()) {
+            val causeType = cause[PropertyData.CMD].toString().toFloat().toInt()
+            if (causeType == PropertyData.DEVICE_STATE) {
+                val deviceJson: String? = getProperty(curUserProperties, DeviceStateBean.DEVICES)
+                if (!TextUtils.isEmpty(deviceJson)) {
+                    val stateBean: DeviceStateBean? = Gson().fromJson(deviceJson, DeviceStateBean::class.java)
+                    stateBean?.camera?.let {
+                        remoteCameraDeviceStateMap[userInfo.userUuid] = it
+                    }
+                    stateBean?.mic?.let {
+                        remoteMicDeviceStateMap[userInfo.userUuid] = it
+                    }
+                }
             }
         }
+    }
+
+    /** init localDevice State from properties */
+    fun initLocalDeviceState(config: EduContextDeviceConfig) {
+        getLocalCameraDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                if (!config.cameraEnabled) {
+                    localCameraDeviceState = EduContextDeviceState.Closed.value
+                }
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+        getLocalMicDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(res: Int?) {
+                if (!config.micEnabled) {
+                    localMicDeviceState = EduContextDeviceState.Closed.value
+                }
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+
+    /** https://confluence.agoralab.co/pages/viewpage.action?pageId=719462858 */
+    protected fun notifyUserDeviceState(info: EduContextUserDetailInfo, callback: EduCallback<Unit>) {
+        if (info.user.userUuid == launchConfig.userUuid) {
+            notifyLocalUserDeviceState(info, callback)
+        } else {
+            notifyRemoteUserDeviceState(info, callback)
+        }
+    }
+
+    private fun notifyLocalUserDeviceState(info: EduContextUserDetailInfo, callback: EduCallback<Unit>) {
+        // Local  Step-1
+        // Determine if the micDevice is open
+        getLocalMicDeviceState(object : EduCallback<Int> {
+            override fun onSuccess(micState: Int?) {
+                if (micState == EduContextDeviceState.Closed.value) {
+                    info.microState = EduContextDeviceState.Closed
+                } else {
+                    // Determine if the audio is muted
+                    if (info.enableAudio) {
+                        if (localMicRteState == RteLocalAudioState.LOCAL_AUDIO_STREAM_STATE_FAILED.value) {
+                            info.microState = EduContextDeviceState.UnAvailable
+                        } else {
+                            info.microState = EduContextDeviceState.Available
+                        }
+                    } else {
+                        info.microState = EduContextDeviceState.Available
+                    }
+                }
+                // Step-1
+                // Determine if the cameraDevice is open
+                getLocalCameraDeviceState(object : EduCallback<Int> {
+                    override fun onSuccess(cameraState: Int?) {
+                        if (cameraState == EduContextDeviceState.Closed.value) {
+                            info.cameraState = EduContextDeviceState.Closed
+                        } else {
+                            // Determine if the video is muted
+                            if (info.enableVideo) {
+                                if (localCameraRteState == RteLocalVideoState.LOCAL_VIDEO_STREAM_STATE_FAILED.value) {
+                                    info.cameraState = EduContextDeviceState.UnAvailable
+                                } else {
+                                    info.cameraState = EduContextDeviceState.Available
+                                }
+                            } else {
+                                info.cameraState = EduContextDeviceState.Available
+                            }
+                        }
+                        callback.onSuccess(Unit)
+                    }
+
+                    override fun onFailure(error: EduError) {
+                    }
+                })
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    private fun notifyRemoteUserDeviceState(info: EduContextUserDetailInfo, callback: EduCallback<Unit>) {
+        // Remote Step-1
+        // Determine if the micDevice is open
+        getRemoteMicDeviceState(info.user.userUuid, object : EduCallback<Int> {
+            override fun onSuccess(micState: Int?) {
+                if (micState == EduContextDeviceState.Closed.value) {
+                    info.microState = EduContextDeviceState.Closed
+                    // Step-2
+                    notifyRemoteUserCameraDeviceState(info, callback)
+                } else {
+                    // Determine if the audio is muted
+                    if (info.enableAudio) {
+                        getRemoteMicDeviceState(info.user.userUuid, object : EduCallback<Int> {
+                            override fun onSuccess(micState: Int?) {
+                                if (micState == EduContextDeviceState.UnAvailable.value) {
+                                    info.microState = EduContextDeviceState.UnAvailable
+                                } else {
+                                    val state = getRemoteAudioRteState(info.streamUuid)
+                                    if (state == RteRemoteAudioState.REMOTE_AUDIO_STATE_FROZEN.value ||
+                                            state == RteRemoteAudioState.REMOTE_AUDIO_STATE_STOPPED.value) {
+                                        info.microState = EduContextDeviceState.UnAvailable
+                                    } else {
+                                        info.microState = EduContextDeviceState.Available
+                                    }
+                                }
+                                // Step-2
+                                notifyRemoteUserCameraDeviceState(info, callback)
+                            }
+
+                            override fun onFailure(error: EduError) {
+                            }
+                        })
+                    } else {
+                        // user mute audio,default mic device available
+                        info.microState = EduContextDeviceState.Available
+                        // Step-2
+                        notifyRemoteUserCameraDeviceState(info, callback)
+                    }
+                }
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
+    }
+
+    private fun notifyRemoteUserCameraDeviceState(info: EduContextUserDetailInfo, callback: EduCallback<Unit>) {
+        // Determine if the cameraDevice is open
+        getRemoteCameraDeviceState(info.user.userUuid, object : EduCallback<Int> {
+            override fun onSuccess(cameraState: Int?) {
+                if (cameraState == EduContextDeviceState.Closed.value) {
+                    info.cameraState = EduContextDeviceState.Closed
+                    callback.onSuccess(Unit)
+                } else {
+                    // Determine if the video is muted
+                    if (info.enableVideo) {
+                        getRemoteCameraDeviceState(info.user.userUuid, object : EduCallback<Int> {
+                            override fun onSuccess(cameraState: Int?) {
+                                if (cameraState == EduContextDeviceState.UnAvailable.value) {
+                                    info.cameraState = EduContextDeviceState.UnAvailable
+                                } else {
+                                    val state = getRemoteVideoRteState(info.streamUuid)
+                                    if (state == RteRemoteVideoState.REMOTE_VIDEO_STATE_FROZEN.value ||
+                                            state == RteRemoteVideoState.REMOTE_VIDEO_STATE_STOPPED.value) {
+                                        info.cameraState = EduContextDeviceState.UnAvailable
+                                    } else {
+                                        info.cameraState = EduContextDeviceState.Available
+                                    }
+                                }
+                                callback.onSuccess(Unit)
+                            }
+
+                            override fun onFailure(error: EduError) {
+                            }
+                        })
+                    } else {
+                        // user mute video,default camera device available
+                        info.cameraState = EduContextDeviceState.Available
+                        callback.onSuccess(Unit)
+                    }
+                }
+            }
+
+            override fun onFailure(error: EduError) {
+            }
+        })
     }
 
     private fun modifyLocalStream(stream: EduStreamInfo?, sourceType: VideoSourceType) {

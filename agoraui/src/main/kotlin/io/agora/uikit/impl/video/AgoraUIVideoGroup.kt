@@ -1,13 +1,13 @@
 package io.agora.uikit.impl.video
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.Rect
 import android.view.*
 import android.widget.LinearLayout
-import io.agora.educontext.EduContextPool
-import io.agora.educontext.EduContextUserDetailInfo
-import io.agora.educontext.EduContextUserRole
-import io.agora.educontext.EduContextVideoMode
+import io.agora.educontext.*
+import io.agora.uikit.educontext.handlers.RoomHandler
+import io.agora.uikit.educontext.handlers.UserHandler
 import io.agora.uikit.interfaces.listeners.IAgoraUIVideoListener
 import io.agora.uikit.educontext.handlers.VideoHandler
 import io.agora.uikit.impl.AbsComponent
@@ -50,6 +50,46 @@ class AgoraUIVideoGroup(
         }
     }
 
+    private val rooMHandler = object : RoomHandler() {
+        override fun onFlexRoomPropsInitialized(properties: MutableMap<String, Any>) {
+            super.onFlexRoomPropsInitialized(properties)
+            val tmp = properties["teacherRenderMode"] ?: "0"
+            val teacherRenderMode = tmp.toString().toFloat().toInt()
+            if (teacherRenderMode == 0) {
+                (context as? Activity)?.runOnUiThread {
+                    pushInRemoteVideo()
+                }
+            } else {
+                (context as? Activity)?.runOnUiThread {
+                    pullOutRemoteVideo()
+                }
+            }
+        }
+
+        override fun onFlexRoomPropsChanged(changedProperties: MutableMap<String, Any>,
+                                            properties: MutableMap<String, Any>,
+                                            cause: MutableMap<String, Any>?,
+                                            operator: EduContextUserInfo?) {
+            super.onFlexRoomPropsChanged(changedProperties, properties, cause, operator)
+            if (cause != null && cause.isNotEmpty()) {
+                val causeType = cause["cause"].toString().toFloat().toInt()
+                if (causeType == 0) {
+                    val tmp = properties["teacherRenderMode"] ?: "0"
+                    val teacherRenderMode = tmp.toString().toFloat().toInt()
+                    if (teacherRenderMode == 0) {
+                        (context as? Activity)?.runOnUiThread {
+                            pushInRemoteVideo()
+                        }
+                    } else {
+                        (context as? Activity)?.runOnUiThread {
+                            pullOutRemoteVideo()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     init {
         parent.addView(videoLayout, width, height)
         val videoParams = videoLayout.layoutParams as ViewGroup.MarginLayoutParams
@@ -80,17 +120,25 @@ class AgoraUIVideoGroup(
         }
 
         eduContext?.videoContext()?.addHandler(videoGroupHandler)
+        eduContext?.roomContext()?.addHandler(rooMHandler)
     }
 
-    fun updateUserDetailInfo(info: EduContextUserDetailInfo) {
-        eduContext?.videoContext()?.getHandlers()?.forEach { handler ->
-            handler.onUserDetailInfoUpdated(info)
+    // Stop rendering in standard mode
+    // only called on UIThread
+    fun pullOutRemoteVideo() {
+        remoteUserDetailInfo?.let {
+            remoteVideo?.isLargeMode = true
+            remoteVideo?.upsertUserDetailInfo2(it)
+//            eduContext?.videoContext()?.renderVideo(null, it.streamUuid)
         }
     }
 
-    fun updateAudioVolumeIndication(value: Int, streamUuid: String) {
-        eduContext?.videoContext()?.getHandlers()?.forEach { handler ->
-            handler.onVolumeUpdated(value, streamUuid)
+    // Restore standard mode rendering
+    // only called on UIThread
+    fun pushInRemoteVideo() {
+        remoteUserDetailInfo?.let {
+            remoteVideo?.isLargeMode = false
+            remoteVideo?.upsertUserDetailInfo2(it)
         }
     }
 

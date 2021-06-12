@@ -10,6 +10,7 @@ interface IAgoraExtAppAPaaSEntry {
     fun updateProperties(identifier: String,
                          properties: MutableMap<String, Any?>?,
                          cause: MutableMap<String, Any?>?,
+                         common: MutableMap<String, Any?>?,
                          callback: AgoraExtAppCallback<String>?)
 
     fun deleteProperties(identifier: String,

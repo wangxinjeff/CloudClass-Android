@@ -54,6 +54,7 @@ import io.agora.rtc.Constants.*
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
 import io.agora.rtc.models.ChannelMediaOptions
+import io.agora.rtc.models.ClientRoleOptions
 import io.agora.rte.RteCallback
 import io.agora.rte.RteEngineImpl
 import io.agora.rte.data.*
@@ -148,12 +149,12 @@ internal class EduRoomImpl(
     }
 
     internal fun getCurUserList(): MutableList<EduUserInfo> {
-        return syncSession.eduUserInfoList
+        return syncSession.getFullUserInfoList()
     }
 
     internal fun getCurRemoteUserList(): MutableList<EduUserInfo> {
         val list = mutableListOf<EduUserInfo>()
-        syncSession.eduUserInfoList?.forEach {
+        syncSession.getFullUserInfoList().forEach {
             if (it != syncSession.localUser.userInfo) {
                 list.add(it)
             }
@@ -162,12 +163,12 @@ internal class EduRoomImpl(
     }
 
     internal fun getCurStreamList(): MutableList<EduStreamInfo> {
-        return syncSession.eduStreamInfoList
+        return syncSession.getFullStreamInfoList()
     }
 
     internal fun getCurRemoteStreamList(): MutableList<EduStreamInfo> {
         val list = mutableListOf<EduStreamInfo>()
-        syncSession.eduStreamInfoList?.forEach {
+        syncSession.getFullStreamInfoList().forEach {
             if (it.publisher != syncSession.localUser.userInfo) {
                 list.add(it)
             }
@@ -262,9 +263,10 @@ internal class EduRoomImpl(
                         RetrofitManager.instance()!!.addHeader("token", roomEntryRes.user.userToken)
                         localUserInfo.isChatAllowed = roomEntryRes.user.muteChat == EduChatState.Allow.value
                         localUserInfo.userProperties = roomEntryRes.user.userProperties
+                                ?: mutableMapOf()
                         localUserInfo.streamUuid = roomEntryRes.user.streamUuid
                         /**把本地用户信息合并到本地缓存中(需要转换类型)*/
-                        syncSession.eduUserInfoList.add(Convert.convertUserInfo(localUserInfo))
+                        syncSession.getFullUserInfoList().add(Convert.convertUserInfo(localUserInfo))
                         /**获取用户可能存在的流信息待join成功后进行处理;*/
                         roomEntryRes.user.streams?.let {
                             /**转换并合并流信息到本地缓存*/
@@ -280,6 +282,7 @@ internal class EduRoomImpl(
                             roomProperties = it
                         }
                         /**加入rte(包括rtm和rtc)*/
+                        AgoraLog.i("$TAG->call joinRte function")
                         joinRte(rtcToken, roomEntryRes.user.streamUuid.toLong(),
                                 mediaOptions.convert(), options.tag, object : RteCallback<Void> {
                             override fun onSuccess(p0: Void?) {
@@ -350,6 +353,14 @@ internal class EduRoomImpl(
         RteEngineImpl[getCurRoomUuid()]?.join(rtcOptionalInfo, rtcToken, rtcUid, channelMediaOptions, callback)
     }
 
+    override fun getRtcCallId(id: String): String {
+        return RteEngineImpl[getCurRoomUuid()]?.getRtcCallId() ?: ""
+    }
+
+    override fun getRtmSessionId(id: String): String {
+        return RteEngineImpl[getCurRoomUuid()]?.getRtmSessionId() ?: ""
+    }
+
     private fun initOrUpdateLocalStream(classRoomEntryRes: EduEntryRes, roomMediaOptions: RoomMediaOptions,
                                         callback: EduCallback<Unit>) {
         val localStreamInitOptions = LocalStreamInitOptions(classRoomEntryRes.user.streamUuid,
@@ -373,9 +384,16 @@ internal class EduRoomImpl(
                     AgoraLog.i("$TAG->The role of localUser is audience, nothing to do")
                 } else {
                     /**大班课场景下为audience,小班课一对一都是broadcaster*/
-                    val role = if (getCurRoomType() !=
-                            RoomType.LARGE_CLASS) CLIENT_ROLE_BROADCASTER else CLIENT_ROLE_AUDIENCE
-                    RteEngineImpl.setClientRole(getCurRoomUuid(), role)
+                    if (getCurRoomType() != RoomType.LARGE_CLASS) {
+                        RteEngineImpl.setClientRole(getCurRoomUuid(), CLIENT_ROLE_BROADCASTER)
+                        AgoraLog.i("$TAG->only setClientRole is broadcaster")
+                    } else {
+                        val options = ClientRoleOptions()
+                        options.audienceLatencyLevel = RteAudienceLatencyLevel.LOW.value
+                        RteEngineImpl.setClientRole(getCurRoomUuid(), CLIENT_ROLE_AUDIENCE, options)
+                        AgoraLog.i("$TAG->setClientRole is audience and set ClientRoleOptions`s " +
+                                "level is LOW")
+                    }
                     AgoraLog.i("$TAG->The role of localUser is not audience，follow roomType:${getCurRoomType()} " +
                             "to set Rtc role is:$role")
                     if (mediaOptions.autoPublish) {
@@ -412,6 +430,9 @@ internal class EduRoomImpl(
                 getCurRemoteUserList().forEach {
                     if (!eduUser.cachedRemoteVideoStates.containsKey(it.streamUuid)) {
                         eduUser.cachedRemoteVideoStates[it.streamUuid] = RteRemoteVideoState.REMOTE_VIDEO_STATE_FROZEN.value
+                    }
+                    if (!eduUser.cachedRemoteAudioStates.containsKey(it.streamUuid)) {
+                        eduUser.cachedRemoteAudioStates[it.streamUuid] == RteRemoteAudioState.REMOTE_AUDIO_STATE_FROZEN.value
                     }
                 }
                 /**维护本地存储的在线人数*/
@@ -560,7 +581,7 @@ internal class EduRoomImpl(
             AgoraLog.e("$TAG->EduRoom[${getCurRoomUuid()}] getFullStreamList error:${error.msg}")
             callback.onFailure(error)
         } else {
-            callback.onSuccess(syncSession.eduStreamInfoList)
+            callback.onSuccess(syncSession.getFullStreamInfoList())
         }
     }
 
@@ -571,7 +592,7 @@ internal class EduRoomImpl(
             AgoraLog.e("$TAG->EduRoom[${getCurRoomUuid()}] getFullUserList error:${error.msg}")
             callback.onFailure(error)
         } else {
-            callback.onSuccess(syncSession.eduUserInfoList)
+            callback.onSuccess(syncSession.getFullUserInfoList())
         }
     }
 
@@ -653,10 +674,30 @@ internal class EduRoomImpl(
         }
     }
 
+    override fun onUserJoined(uid: Int) {
+        val uuid = (uid.toLong() and 0xffffffffL).toString()
+        if (!getCurLocalUser().cacheRemoteOnlineUids.contains(uuid)) {
+            getCurLocalUser().cacheRemoteOnlineUids.add(uuid)
+        }
+        eventListener?.onRemoteRTCJoinedOfStreamId(uuid)
+    }
+
+    override fun onUserOffline(uid: Int) {
+        val uuid = (uid.toLong() and 0xffffffffL).toString()
+        getCurLocalUser().cacheRemoteOnlineUids.remove(uuid)
+        eventListener?.onRemoteRTCOfflineOfStreamId(uuid)
+    }
+
     override fun onRemoteVideoStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
         val longStreamUuid = uid.toLong() and 0xffffffffL
         getCurLocalUser().cachedRemoteVideoStates[longStreamUuid.toString()] = state
         getCurLocalUser().eventListener?.onRemoteVideoStateChanged(rtcChannel, uid, state, reason, elapsed)
+    }
+
+    override fun onRemoteAudioStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
+        val longStreamUuid = uid.toLong() and 0xffffffffL
+        getCurLocalUser().cachedRemoteAudioStates[longStreamUuid.toString()] = state
+        getCurLocalUser().eventListener?.onRemoteAudioStateChanged(rtcChannel, uid, state, reason, elapsed)
     }
 
     override fun onRemoteVideoStats(stats: RteRemoteVideoStats) {
@@ -665,6 +706,10 @@ internal class EduRoomImpl(
 
     override fun onLocalVideoStateChanged(localVideoState: Int, error: Int) {
         getCurLocalUser().eventListener?.onLocalVideoStateChanged(localVideoState, error)
+    }
+
+    override fun onLocalAudioStateChanged(localAudioState: Int, error: Int) {
+        getCurLocalUser().eventListener?.onLocalAudioStateChanged(localAudioState, error)
     }
 
     override fun onLocalVideoStats(stats: RteLocalVideoStats) {

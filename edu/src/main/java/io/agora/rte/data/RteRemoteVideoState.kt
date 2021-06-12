@@ -51,23 +51,23 @@ enum class RteRemoteVideoState(val value: Int) {
     companion object {
         fun convert(value: Int): Int {
             return when (value) {
-                REMOTE_VIDEO_STATE_STOPPED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_STOPPED
+                Constants.REMOTE_VIDEO_STATE_STOPPED -> {
+                    REMOTE_VIDEO_STATE_STOPPED.value
                 }
-                REMOTE_VIDEO_STATE_STARTING.value -> {
-                    Constants.REMOTE_VIDEO_STATE_STARTING
+                Constants.REMOTE_VIDEO_STATE_STARTING -> {
+                    REMOTE_VIDEO_STATE_STARTING.value
                 }
-                REMOTE_VIDEO_STATE_DECODING.value -> {
-                    Constants.REMOTE_VIDEO_STATE_DECODING
+                Constants.REMOTE_VIDEO_STATE_DECODING -> {
+                    REMOTE_VIDEO_STATE_DECODING.value
                 }
-                REMOTE_VIDEO_STATE_FROZEN.value -> {
-                    Constants.REMOTE_VIDEO_STATE_FROZEN
+                Constants.REMOTE_VIDEO_STATE_FROZEN -> {
+                    REMOTE_VIDEO_STATE_FROZEN.value
                 }
-                REMOTE_VIDEO_STATE_FAILED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_FAILED
+                Constants.REMOTE_VIDEO_STATE_FAILED -> {
+                    REMOTE_VIDEO_STATE_FAILED.value
                 }
                 else -> {
-                    Constants.REMOTE_VIDEO_STATE_STOPPED
+                    REMOTE_VIDEO_STATE_STOPPED.value
                 }
             }
         }
@@ -89,38 +89,38 @@ enum class RteRemoteVideoStateChangeReason(val value: Int) {
     companion object {
         fun convert(value: Int): Int {
             return when (value) {
-                REMOTE_VIDEO_STATE_REASON_INTERNAL.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_INTERNAL
+                Constants.REMOTE_VIDEO_STATE_REASON_INTERNAL -> {
+                    REMOTE_VIDEO_STATE_REASON_INTERNAL.value
                 }
-                REMOTE_VIDEO_STATE_REASON_NETWORK_CONGESTION.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_NETWORK_CONGESTION
+                Constants.REMOTE_VIDEO_STATE_REASON_NETWORK_CONGESTION -> {
+                    REMOTE_VIDEO_STATE_REASON_NETWORK_CONGESTION.value
                 }
-                REMOTE_VIDEO_STATE_REASON_NETWORK_RECOVERY.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_NETWORK_RECOVERY
+                Constants.REMOTE_VIDEO_STATE_REASON_NETWORK_RECOVERY -> {
+                    REMOTE_VIDEO_STATE_REASON_NETWORK_RECOVERY.value
                 }
-                REMOTE_VIDEO_STATE_REASON_LOCAL_MUTED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_MUTED
+                Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_MUTED -> {
+                    REMOTE_VIDEO_STATE_REASON_LOCAL_MUTED.value
                 }
-                REMOTE_VIDEO_STATE_REASON_LOCAL_UNMUTED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_UNMUTED
+                Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_UNMUTED -> {
+                    REMOTE_VIDEO_STATE_REASON_LOCAL_UNMUTED.value
                 }
-                REMOTE_VIDEO_STATE_REASON_REMOTE_MUTED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_MUTED
+                Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_MUTED -> {
+                    REMOTE_VIDEO_STATE_REASON_REMOTE_MUTED.value
                 }
-                REMOTE_VIDEO_STATE_REASON_REMOTE_UNMUTED.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_UNMUTED
+                Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_UNMUTED -> {
+                    REMOTE_VIDEO_STATE_REASON_REMOTE_UNMUTED.value
                 }
-                REMOTE_VIDEO_STATE_REASON_REMOTE_OFFLINE.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_OFFLINE
+                Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_OFFLINE -> {
+                    REMOTE_VIDEO_STATE_REASON_REMOTE_OFFLINE.value
                 }
-                REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK
+                Constants.REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK -> {
+                    REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK.value
                 }
-                REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK_RECOVERY.value -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK_RECOVERY
+                Constants.REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK_RECOVERY -> {
+                    REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK_RECOVERY.value
                 }
                 else -> {
-                    Constants.REMOTE_VIDEO_STATE_REASON_INTERNAL
+                    REMOTE_VIDEO_STATE_REASON_INTERNAL.value
                 }
             }
         }

@@ -8,6 +8,7 @@ import android.view.View.GONE
 import android.view.View.VISIBLE
 import android.widget.FrameLayout
 import androidx.cardview.widget.CardView
+import io.agora.educontext.EduContextScreenShareState
 import io.agora.educontext.EduContextPool
 import io.agora.uikit.R
 import io.agora.uikit.educontext.handlers.ScreenShareHandler
@@ -29,8 +30,12 @@ class AgoraUIScreenShare(
     private val screenShareContainer: FrameLayout = contentView.findViewById(R.id.screen_share_container_layout)
 
     private val screenShareHandler = object : ScreenShareHandler() {
-        override fun onScreenShareStateUpdated(sharing: Boolean, streamUuid: String) {
-            updateScreenShareState(sharing, streamUuid)
+        override fun onScreenShareStateUpdated(state: EduContextScreenShareState, streamUuid: String) {
+            updateScreenShareState(state, streamUuid)
+        }
+
+        override fun onSelectScreenShare(select: Boolean) {
+            super.onSelectScreenShare(select)
         }
     }
 
@@ -53,10 +58,11 @@ class AgoraUIScreenShare(
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    fun updateScreenShareState(sharing: Boolean, streamUuid: String) {
+    fun updateScreenShareState(state: EduContextScreenShareState, streamUuid: String) {
         contentView.post {
+            val sharing = state == EduContextScreenShareState.Start
             contentView.visibility = if (sharing) VISIBLE else GONE
-            eduContext?.screenShareContext()?.setScreenShareState(sharing)
+            eduContext?.screenShareContext()?.setScreenShareState(state)
 
             if (sharing) {
                 cardView.setOnTouchListener(this)
@@ -64,7 +70,7 @@ class AgoraUIScreenShare(
                 screenShareContainer.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
                     override fun onChildViewAdded(parent: View?, child: View?) {
                         child?.let {
-                            if(child is SurfaceView) {
+                            if (child is SurfaceView) {
                                 child.setZOrderMediaOverlay(true)
                             }
                         }

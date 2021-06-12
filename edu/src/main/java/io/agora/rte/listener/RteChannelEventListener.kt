@@ -9,11 +9,19 @@ import io.agora.rtm.RtmMessage
 
 interface RteChannelEventListener {
 
+    fun onUserJoined(uid: Int)
+
+    fun onUserOffline(uid: Int)
+
     fun onRemoteVideoStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int)
+
+    fun onRemoteAudioStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int)
 
     fun onRemoteVideoStats(stats: RteRemoteVideoStats)
 
     fun onLocalVideoStateChanged(localVideoState: Int, error: Int)
+
+    fun onLocalAudioStateChanged(localVideoState: Int, error: Int)
 
     fun onLocalVideoStats(stats: RteLocalVideoStats)
 

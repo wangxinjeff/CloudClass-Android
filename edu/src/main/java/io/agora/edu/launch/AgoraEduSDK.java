@@ -47,6 +47,9 @@ import io.agora.extension.AgoraExtAppConfiguration;
 import io.agora.extension.AgoraExtAppEngine;
 import io.agora.report.ReportManager;
 import io.agora.report.reporters.APaasReporter;
+import io.agora.uicomponent.UiWidgetConfig;
+import io.agora.uicomponent.UiWidgetManager;
+import io.agora.uikit.impl.chat.AgoraUIChatWindow;
 
 import static io.agora.edu.common.impl.RoomPreImpl.ROOMEND;
 import static io.agora.edu.common.impl.RoomPreImpl.ROOMFULL;
@@ -69,6 +72,7 @@ public class AgoraEduSDK {
     public static List<AgoraEduCourseware> COURSEWARES = Collections.synchronizedList(new ArrayList<>());
     private static String baseUrl = BuildConfig.API_BASE_URL;
     private static String reportUrl = BuildConfig.REPORT_BASE_URL;
+    private static String reportUrlV2 = BuildConfig.REPORT_BASE_URL_V2;
 
     public static String baseUrl() {
         return baseUrl;
@@ -76,6 +80,10 @@ public class AgoraEduSDK {
 
     public static String reportUrl() {
         return reportUrl;
+    }
+
+    public static String reportUrlV2() {
+        return reportUrlV2;
     }
 
     public static void setParameters(String json) {
@@ -88,8 +96,7 @@ public class AgoraEduSDK {
             if (obj.has("edu.reportUrl")) {
                 reportUrl = obj.getString("edu.reportUrl");
             }
-        }
-        catch (JSONException e) {
+        } catch (JSONException e) {
             e.printStackTrace();
         }
     }
@@ -190,8 +197,28 @@ public class AgoraEduSDK {
         return ReportManager.INSTANCE.getAPaasReporter();
     }
 
-    public static AgoraEduClassRoom launch(@NotNull Context context, @NotNull AgoraEduLaunchConfig config,
+    public static AgoraEduClassRoom launch(@NotNull Context context,
+                                           @NotNull AgoraEduLaunchConfig config,
                                            @NotNull AgoraEduLaunchCallback callback) {
+        // Register default widgets globally here because we must ensure
+        // users call this register method just before they use our edu
+        // library and will relief them registering default widgets in their code.
+        // Then there will be a chance to replace the widgets of their own.
+        // Widget registering will not depend on any other part of classroom
+        // mechanism, so we handle it at the beginning of the classroom launch.
+        ArrayList<UiWidgetConfig> widgetConfigs = new ArrayList<>();
+        widgetConfigs.add(new UiWidgetConfig(
+                UiWidgetManager.DefaultWidgetId.Chat.name(),
+                AgoraUIChatWindow.class));
+        UiWidgetManager.Companion.registerDefaultOnce(widgetConfigs);
+
+        // Register user-defined widgets as long as they maintain
+        // their widget ids somewhere else.
+        // Can replace any widgets that are registered as default above.
+        if (config.getWidgetConfigs() != null) {
+            UiWidgetManager.Companion.registerAndReplace(config.getWidgetConfigs());
+        }
+
         // before launch, pause All CacheTask
         pauseAllCacheTask();
         // step-0: get agoraEduSDKConfig and to configure
@@ -248,12 +275,13 @@ public class AgoraEduSDK {
         }
 
         // step-1:pull remote config
-        roomPre = new RoomPreImpl(config.appId, config.getRoomUuid());
+        roomPre = new RoomPreImpl(config.getAppId(), config.getRoomUuid());
         roomPre.pullRemoteConfig(new EduCallback<EduRemoteConfigRes>() {
             @Override
             public void onSuccess(@Nullable EduRemoteConfigRes res) {
                 EduRemoteConfigRes.NetLessConfig netLessConfig = res.getNetless();
-                config.whiteBoardAppId = netLessConfig.getAppId();
+                config.setWhiteBoardAppId(netLessConfig.getAppId());
+                config.setVendorId(res.getVid());
                 // step-2:check classRoom and init EduManager
                 checkAndInit(context, config);
             }
@@ -275,12 +303,13 @@ public class AgoraEduSDK {
 
         RoomPreCheckReq req = new RoomPreCheckReq(config.getRoomName(), config.getRoomType(),
                 String.valueOf(AgoraEduRoleType.AgoraEduRoleTypeStudent.getValue()),
-                config.getStartTime(), config.getDuration(), config.getUserName(), config.getBoardRegion());
+                config.getStartTime(), config.getDuration(), config.getUserName(),
+                config.getBoardRegion(), config.getUserProperties());
         roomPre.preCheckClassRoom(config.getUserUuid(), req, new EduCallback<RoomPreCheckRes>() {
             @Override
             public void onSuccess(@Nullable RoomPreCheckRes preCheckRes) {
                 assert preCheckRes != null;
-                EduManagerOptions options = new EduManagerOptions(context, config.appId,
+                EduManagerOptions options = new EduManagerOptions(context, config.getAppId(),
                         config.getRtmToken(), config.getUserUuid(), config.getUserName());
                 options.setLogFileDir(context.getCacheDir().getAbsolutePath());
                 EduManager.init(options, new EduCallback<EduManager>() {
@@ -354,7 +383,7 @@ public class AgoraEduSDK {
     private static void callbackError(Context context, AgoraEduEvent event, String msg) {
         Log.e(TAG, msg);
         agoraEduLaunchCallback.onCallback(event);
-        if (context instanceof Activity) {
+        if (context instanceof Activity && event != AgoraEduEvent.AgoraEduEventForbidden) {
             ((Activity) context).runOnUiThread(() -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show());
         }
         Log.e(TAG, msg);

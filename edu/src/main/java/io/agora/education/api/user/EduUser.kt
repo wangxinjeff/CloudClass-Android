@@ -19,6 +19,10 @@ interface EduUser {
 
     var cachedRemoteVideoStates: MutableMap<String, Int>
 
+    var cachedRemoteAudioStates: MutableMap<String, Int>
+
+    var cacheRemoteOnlineUids: MutableList<String>
+
     /**code:message
      * 1:parameter XXX is invalid
      * 201:media error:code，透传rtc错误code或者message*/

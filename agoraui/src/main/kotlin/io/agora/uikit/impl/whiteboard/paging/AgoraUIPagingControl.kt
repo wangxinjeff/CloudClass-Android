@@ -194,6 +194,12 @@ class AgoraUIPagingControl(
         }
     }
 
+    fun setVisibility(visibility: Int) {
+        view.post {
+            view.visibility = visibility
+        }
+    }
+
     override fun setRect(rect: Rect) {
         view.post {
             val params = view.layoutParams as ViewGroup.MarginLayoutParams

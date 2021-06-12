@@ -4,6 +4,7 @@ import io.agora.education.api.message.AgoraActionType
 import io.agora.education.api.message.EduFromUserInfo
 import io.agora.education.api.room.EduRoom
 import io.agora.education.api.room.data.*
+import io.agora.education.api.statistics.ConnectionState
 import io.agora.education.api.statistics.NetworkQuality
 import io.agora.education.api.stream.data.*
 import io.agora.education.api.user.data.EduChatState
@@ -103,7 +104,7 @@ internal object Convert {
     }
 
     /**根据角色字符串返回EduUserRole枚举值*/
-    fun convertUserRole(role: String, roomType: RoomType): EduUserRole {
+    fun convertUserRole(role: String, roomType: RoomType? = null): EduUserRole {
         when (role) {
             EduUserRoleStr.host.name -> {
                 return EduUserRole.TEACHER
@@ -111,15 +112,8 @@ internal object Convert {
             EduUserRoleStr.assistant.name -> {
                 return EduUserRole.ASSISTANT
             }
-//            EduUserRoleStr.broadcaster.name -> {
-//                if (roomType == RoomType.ONE_ON_ONE || roomType == RoomType.SMALL_CLASS) {
-//                    return EduUserRole.STUDENT
-//                }
-//            }
             EduUserRoleStr.broadcaster.name -> {
-                if (roomType == RoomType.ONE_ON_ONE) {
-                    return EduUserRole.STUDENT
-                }
+                return EduUserRole.STUDENT
             }
             EduUserRoleStr.audience.name -> {
                 return EduUserRole.STUDENT
@@ -290,25 +284,25 @@ internal object Convert {
         return allow
     }
 
-    fun convertConnectionState(connectionState: Int): EduContextConnectionState {
+    fun convertConnectionState(connectionState: Int): ConnectionState {
         return when (connectionState) {
             CONNECTION_STATE_DISCONNECTED -> {
-                EduContextConnectionState.Disconnected
+                ConnectionState.DISCONNECTED
             }
             CONNECTION_STATE_CONNECTING -> {
-                EduContextConnectionState.Connecting
+                ConnectionState.CONNECTING
             }
             CONNECTION_STATE_CONNECTED -> {
-                EduContextConnectionState.Connected
+                ConnectionState.CONNECTED
             }
             CONNECTION_STATE_RECONNECTING -> {
-                EduContextConnectionState.Reconnecting
+                ConnectionState.RECONNECTING
             }
             CONNECTION_STATE_ABORTED -> {
-                EduContextConnectionState.Aborted
+                ConnectionState.ABORTED
             }
             else -> {
-                EduContextConnectionState.Disconnected
+                ConnectionState.DISCONNECTED
             }
         }
     }
@@ -327,6 +321,7 @@ internal object Convert {
         val userInfoImpl = EduUserInfoImpl(userInfo.userUuid, userInfo.userName, userInfo.role,
                 userInfo.isChatAllowed ?: false, (userInfo as EduLocalUserInfoImpl).updateTime)
         userInfoImpl.streamUuid = userInfo.streamUuid
+        userInfoImpl.userProperties = userInfo.userProperties
         return userInfoImpl
     }
 

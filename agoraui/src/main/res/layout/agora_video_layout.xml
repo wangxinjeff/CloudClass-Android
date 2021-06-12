@@ -59,6 +59,38 @@
 
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/camera_disable_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <androidx.appcompat.widget.AppCompatImageView
+                android:id="@+id/camera_disable_img"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@drawable/agora_video_img_camera_disable" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tip_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/theme_black"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <androidx.appcompat.widget.AppCompatTextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/theme_white"
+                android:textSize="@dimen/agora_video_large_tip_size"
+                android:text="@string/agora_video_large_tip"/>
+
+        </LinearLayout>
+
         <RelativeLayout
             android:id="@+id/options_Layout"
             android:layout_width="match_parent"
@@ -131,13 +163,13 @@
 
                 <androidx.appcompat.widget.AppCompatImageView
                     android:id="@+id/video_ic"
-                    android:visibility="invisible"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_vertical"
                     android:layout_marginStart="@dimen/agora_video_name_margin_start"
                     android:layout_marginLeft="@dimen/agora_video_name_margin_start"
-                    android:src="@drawable/agora_video_ic_video_bg" />
+                    android:src="@drawable/agora_video_ic_video_bg"
+                    android:visibility="invisible" />
 
                 <androidx.appcompat.widget.AppCompatTextView
                     android:id="@+id/name_Text"

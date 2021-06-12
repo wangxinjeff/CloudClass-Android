@@ -12,4 +12,8 @@ interface IRteChannel {
     fun leave(callback: RteCallback<Unit>)
 
     fun release()
+
+    fun getRtcCallId() : String
+
+    fun getRtmSessionId() : String
 }

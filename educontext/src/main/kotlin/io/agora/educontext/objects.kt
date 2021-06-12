@@ -1,30 +1,24 @@
 package io.agora.educontext
 
 import android.graphics.Color
+import io.agora.educontext.EduContextVideoDimensions.VideoDimensions_320X240
 
 data class EduContextChatItem(
         var name: String = "",
         var uid: String = "",
+        var role: Int = EduContextUserRole.Student.value,
         var message: String = "",
-        var messageId: Int = 0,
+        var messageId: String = "",
         var type: EduContextChatItemType = EduContextChatItemType.Text,
         var source: EduContextChatSource = EduContextChatSource.Remote,
         var state: EduContextChatState = EduContextChatState.Default,
         var timestamp: Long = 0) {
-
-    fun copyValue(item: EduContextChatItem) {
-        this.name = item.name
-        this.uid = item.uid
-        this.message = message
-        this.messageId = messageId
-        this.type = type
-        this.source = item.source
-        this.state = item.state
-        this.timestamp = item.timestamp
-    }
 }
 
-data class EduContextChatItemSendResult(val userId: String, val messageId: Int, val timestamp: Long)
+data class EduContextChatItemSendResult(
+        val fromUserId: String,
+        val messageId: String,
+        val timestamp: Long)
 
 enum class EduContextChatItemType {
     Text
@@ -52,12 +46,37 @@ enum class EduContextNetworkState {
     Good, Medium, Bad, Unknown;
 }
 
-enum class EduContextConnectionState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Reconnecting,
-    Aborted
+enum class EduContextConnectionState(val value: Int) {
+    Disconnected(1),
+    Connecting(2),
+    Connected(3),
+    Reconnecting(4),
+    Aborted(5);
+
+    companion object {
+        fun convert(state: Int): EduContextConnectionState {
+            return when (state) {
+                Disconnected.value -> {
+                    Disconnected
+                }
+                Connecting.value -> {
+                    Connecting
+                }
+                Connected.value -> {
+                    Connected
+                }
+                Reconnecting.value -> {
+                    Reconnecting
+                }
+                Aborted.value -> {
+                    Aborted
+                }
+                else -> {
+                    Disconnected
+                }
+            }
+        }
+    }
 }
 
 data class EduContextUserDetailInfo(val user: EduContextUserInfo, val streamUuid: String) {
@@ -65,29 +84,34 @@ data class EduContextUserDetailInfo(val user: EduContextUserInfo, val streamUuid
     var onLine: Boolean = false
     var coHost: Boolean = false
     var boardGranted: Boolean = false
-    var cameraState: DeviceState = DeviceState.UnAvailable
-    var microState: DeviceState = DeviceState.UnAvailable
+    var cameraState: EduContextDeviceState = EduContextDeviceState.UnAvailable
+    var microState: EduContextDeviceState = EduContextDeviceState.UnAvailable
     var enableVideo: Boolean = false
     var enableAudio: Boolean = false
+    var silence: Boolean = false
     var rewardCount: Int = -1
+    var isLargeMode: Boolean = false
 
     constructor(user: EduContextUserInfo, streamUuid: String, isSelf: Boolean = true, onLine: Boolean = false, coHost: Boolean,
-                boardGranted: Boolean, cameraState: DeviceState, microState: DeviceState,
-                enableVideo: Boolean, enableAudio: Boolean, rewardCount: Int) : this(user, streamUuid) {
+                boardGranted: Boolean, cameraStateEduContext: EduContextDeviceState, microStateEduContext: EduContextDeviceState,
+                enableVideo: Boolean, enableAudio: Boolean, silence: Boolean, rewardCount: Int,
+                isLargeMode: Boolean) : this(user, streamUuid) {
         this.isSelf = isSelf
         this.onLine = onLine
         this.coHost = coHost
         this.boardGranted = boardGranted
-        this.cameraState = cameraState
-        this.microState = microState
+        this.cameraState = cameraStateEduContext
+        this.microState = microStateEduContext
         this.enableVideo = enableVideo
         this.enableAudio = enableAudio
+        this.silence = silence
         this.rewardCount = rewardCount
+        this.isLargeMode = isLargeMode
     }
 
     fun copy(): EduContextUserDetailInfo {
         return EduContextUserDetailInfo(user, streamUuid, isSelf, onLine, coHost, boardGranted, cameraState,
-                microState, enableVideo, enableAudio, rewardCount)
+                microState, enableVideo, enableAudio, silence, rewardCount, isLargeMode)
     }
 
     override fun equals(other: Any?): Boolean {
@@ -98,33 +122,81 @@ data class EduContextUserDetailInfo(val user: EduContextUserInfo, val streamUuid
                 && other.onLine == onLine && other.coHost == coHost && other.boardGranted == boardGranted
                 && other.cameraState == cameraState && other.microState == microState
                 && other.enableVideo == enableVideo && other.enableAudio == enableAudio
-                && other.rewardCount == rewardCount
+                && other.silence == silence && other.rewardCount == rewardCount
+                && other.isLargeMode == isLargeMode
+    }
+
+    override fun hashCode(): Int {
+        var result = user.hashCode()
+        result = 31 * result + streamUuid.hashCode()
+        result = 31 * result + isSelf.hashCode()
+        result = 31 * result + onLine.hashCode()
+        result = 31 * result + coHost.hashCode()
+        result = 31 * result + boardGranted.hashCode()
+        result = 31 * result + cameraState.hashCode()
+        result = 31 * result + microState.hashCode()
+        result = 31 * result + enableVideo.hashCode()
+        result = 31 * result + enableAudio.hashCode()
+        result = 31 * result + silence.hashCode()
+        result = 31 * result + rewardCount
+        result = 31 * result + isLargeMode.hashCode()
+        return result
     }
 }
 
 data class EduContextUserInfo(
         val userUuid: String,
         val userName: String,
-        val role: EduContextUserRole = EduContextUserRole.Student
+        val role: EduContextUserRole = EduContextUserRole.Student,
+        val properties: MutableMap<String, String>?
 ) {
     override fun equals(other: Any?): Boolean {
         if (other == null || other !is EduContextUserInfo) {
             return false
         }
-        return other.userUuid == userUuid && other.userName == userName && other.role == role
+        return other.userUuid == userUuid && other.userName == userName && other.role == role &&
+                other.properties == properties
+    }
+
+    override fun hashCode(): Int {
+        var result = userUuid.hashCode()
+        result = 31 * result + userName.hashCode()
+        result = 31 * result + role.hashCode()
+        result = 31 * result + properties.hashCode()
+        return result
     }
 }
 
 enum class EduContextUserRole(val value: Int) {
     Teacher(1),
     Student(2),
-    Assistant(3)
+    Assistant(3);
+
+    companion object {
+        fun fromValue(value: Int): EduContextUserRole {
+            return when (value) {
+                Teacher.value -> Teacher
+                Student.value -> Student
+                Assistant.value -> Assistant
+                else -> Student
+            }
+        }
+    }
 }
 
-enum class DeviceState(val value: Int) {
+enum class EduContextDeviceState(val value: Int) {
     UnAvailable(0),
     Available(1),
-    Closed(2)
+    Closed(2),
+
+    // only use in local(not sync to remote)
+    Open(30)
+}
+
+object DeviceType {
+    const val CAMERA = "camera"
+    const val MIC = "mic"
+    const val SPEAKER = "speaker"
 }
 
 enum class EduContextVideoMode(val value: Int) {
@@ -133,7 +205,7 @@ enum class EduContextVideoMode(val value: Int) {
 }
 
 data class WhiteboardDrawingConfig(
-        var activeAppliance: WhiteboardApplianceType = WhiteboardApplianceType.Select,
+        var activeAppliance: WhiteboardApplianceType = WhiteboardApplianceType.Clicker,
         var color: Int = Color.WHITE,
         var fontSize: Int = 22,
         var thick: Int = 4) {
@@ -147,7 +219,7 @@ data class WhiteboardDrawingConfig(
 }
 
 enum class WhiteboardApplianceType {
-    Select, Pen, Rect, Circle, Line, Eraser, Text;
+    Select, Pen, Rect, Circle, Line, Eraser, Text, Clicker;
 }
 
 enum class WhiteboardToolType {
@@ -157,3 +229,88 @@ enum class WhiteboardToolType {
 data class EduContextPrivateChatInfo(
         val fromUser: EduContextUserInfo,
         val toUser: EduContextUserInfo)
+
+enum class EduContextScreenShareState(val value: Int) {
+    Start(0),
+    Pause(1),
+    Stop(2)
+}
+
+data class EduContextRoomInfo(
+        val roomUuid: String,
+        val roomName: String,
+        val roomType: EduContextRoomType
+)
+
+enum class EduContextRoomType(val value: Int) {
+    OneToOne(0),
+    LargeClass(2),
+    SmallClass(4);
+
+    companion object {
+        fun fromValue(value: Int): EduContextRoomType {
+            return when (value) {
+                LargeClass.value -> LargeClass
+                SmallClass.value -> SmallClass
+                else -> OneToOne
+            }
+        }
+    }
+}
+
+enum class EduContextCameraFacing(val value: Int) {
+    Front(0),
+    Back(1);
+}
+
+data class EduContextDeviceConfig(
+        var cameraEnabled: Boolean = true,
+        var cameraFacing: EduContextCameraFacing = EduContextCameraFacing.Front,
+        var micEnabled: Boolean = true,
+        var speakerEnabled: Boolean = true)
+
+enum class EduBoardRoomPhase(val value: Int) {
+    connecting(0),
+    connected(1),
+    reconnecting(2),
+    disconnecting(3),
+    disconnected(4);
+
+    companion object {
+        fun convert(name: String?): EduBoardRoomPhase {
+            return when (name) {
+                connecting.name -> connecting
+                connected.name -> connected
+                reconnecting.name -> reconnecting
+                disconnecting.name -> disconnecting
+                disconnected.name -> disconnected
+                else -> disconnected
+            }
+        }
+    }
+}
+
+enum class State(val value: Int) {
+    NO(0),
+    YES(1)
+}
+
+enum class EduContextRenderMode(val value: Int) {
+    HIDDEN(1),
+    FIT(2)
+}
+
+data class EduContextRenderConfig(
+        val renderMode: EduContextRenderMode = EduContextRenderMode.HIDDEN) {
+}
+
+object EduContextVideoDimensions {
+    val VideoDimensions_720X1280 = arrayOf(720, 1280)
+    val VideoDimensions_320X240 = arrayOf(320, 240)
+}
+
+data class EduContextVideoConfig(
+        val videoDimensionWidth: Int = VideoDimensions_320X240[0],
+        val videoDimensionHeight: Int = VideoDimensions_320X240[1],
+        val frameRate: Int = 15) {
+}

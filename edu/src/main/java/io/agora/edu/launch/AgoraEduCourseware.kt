@@ -6,11 +6,13 @@ import io.agora.edu.common.bean.board.sceneppt.SceneInfo
 
 data class AgoraEduCourseware(
         val resourceName: String?,
+        val resourceUuid: String?,
         val scenePath: String?,
         val scenes: List<SceneInfo>?,
         val resourceUrl: String?
 ) : Parcelable {
     constructor(parcel: Parcel) : this(
+            parcel.readString(),
             parcel.readString(),
             parcel.readString(),
             parcel.createTypedArrayList(SceneInfo.CREATOR),
@@ -19,6 +21,7 @@ data class AgoraEduCourseware(
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
         parcel.writeString(resourceName)
+        parcel.writeString(resourceUuid)
         parcel.writeString(scenePath)
         parcel.writeTypedList(scenes)
         parcel.writeString(resourceUrl)

@@ -1,6 +1,7 @@
 package io.agora.educontext.eventHandler
 
 import io.agora.educontext.EduContextUserDetailInfo
+import io.agora.educontext.EduContextUserInfo
 
 interface IVideoHandler {
     fun onUserDetailInfoUpdated(info: EduContextUserDetailInfo)

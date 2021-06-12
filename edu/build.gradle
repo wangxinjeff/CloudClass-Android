@@ -29,23 +29,25 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
 
-        buildConfigField 'String', 'APAAS_VERSION', '"1.1.0"'
+        buildConfigField 'Integer', 'SERVICE_APAAS', '0'
+        buildConfigField 'String', 'APAAS_VERSION', '"1.1.2"'
         buildConfigField 'String', 'POLICY_URL', '"https://www.agora.io/privacy-policy/"'
         buildConfigField 'String', 'REPLAY_BASE_URL', '"https://agora-adc-artifacts.oss-accelerate.aliyuncs.com/"'
 
         //--------whiteboard-buildconfig-----------
-        buildConfigField 'String', 'NETLESS_RESOURCE_CDN_HOST', '"convertcdn.netless.link/"'
+        buildConfigField 'String', 'NETLESS_RESOURCE_CDN_HOST', '"convertcdn.netless.link"'
         buildConfigField 'String', 'NETLESS_API_BASE_URL', '"https://cloudcapiv4.herewhite.com/"'
         //--------whiteboard-buildconfig-----------
 
         //--------api-buildconfig---------------
         buildConfigField 'String', 'SDK_VERSION', '"1.0.0"'
         buildConfigField 'String', 'API_BASE_URL', '"https://api.agora.io/"'
-        buildConfigField 'String', 'LOG_OSS_CALLBACK_HOST', '"https://api-solutions.agoralab.co/"'
+        buildConfigField 'String', 'LOG_OSS_CALLBACK_HOST', '"http://api.agora.io/"'
         //--------api-buildconfig---------------
 
         //--------report-buildconfig---------------
         buildConfigField 'String', 'REPORT_BASE_URL', '"https://api.agora.io/"'
+        buildConfigField 'String', 'REPORT_BASE_URL_V2', '"https://rest-argus-ad.agoralab.co"'
         //--------report-buildconfig---------------
     }
 
@@ -69,7 +71,7 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
 
-    implementation project(path: ':agoraui')
+    api project(path: ':agoraui')
 
     implementation "com.google.android.material:material:${safeExtGet('dependencies', 'com.google.android.material:material', '1.2.1')}"
     implementation "com.google.android.exoplayer:exoplayer:${safeExtGet('dependencies', 'com.google.android.exoplayer:exoplayer', '2.8.1')}"
@@ -94,9 +96,10 @@ dependencies {
 
     testImplementation "junit:junit:${safeExtGet('dependencies', 'junit:junit', '4.12')}"
 
+    implementation "com.google.protobuf:protobuf-java:${safeExtGet('dependencies', 'com.google.protobuf:protobuf-java', '3.17.0')}"
     implementation "com.elvishew:xlog:${safeExtGet('dependencies', 'com.elvishew:xlog', '1.6.1')}"
     implementation "com.aliyun.dpa:oss-android-sdk:${safeExtGet('dependencies', 'com.aliyun.dpa:oss-android-sdk', '2.9.4')}"
-    implementation "com.github.agorabuilder:agora-special-full:${safeExtGet('dependencies', 'com.github.agorabuilder:agora-special-full', rootProject.ext.android.rtcSDKVersion)}"
+    implementation "com.github.agorabuilder:native-full-sdk:${safeExtGet('dependencies', 'com.github.agorabuilder:native-full-sdk', rootProject.ext.android.rtcSDKVersion)}"
     implementation "io.agora.rtm:rtm-sdk:${safeExtGet('dependencies', 'io.agora.rtm:rtm-sdk', rootProject.ext.android.rtmSDKVersion)}"
     implementation "com.github.duty-os:white-sdk-android:${safeExtGet('dependencies', 'com.github.duty-os:white-sdk-android', rootProject.ext.android.boardSDKVersion)}"
 }

@@ -16,8 +16,18 @@ internal open abstract class RoomSyncSession(val roomInfo: EduRoomInfo, val room
     lateinit var localUser: EduUser
 
     /**本地缓存的人流数据*/
-    val eduUserInfoList = Collections.synchronizedList(mutableListOf<EduUserInfo>())
-    val eduStreamInfoList = Collections.synchronizedList(mutableListOf<EduStreamInfo>())
+    private val eduUserInfoList = Collections.synchronizedList(mutableListOf<EduUserInfo>())
+    private val eduStreamInfoList = Collections.synchronizedList(mutableListOf<EduStreamInfo>())
+
+    @Synchronized
+    fun getFullUserInfoList(): MutableList<EduUserInfo> {
+        return eduUserInfoList
+    }
+
+    @Synchronized
+    fun getFullStreamInfoList(): MutableList<EduStreamInfo> {
+        return eduStreamInfoList
+    }
 
     abstract fun updateSequenceId(cmdResponseBody: CMDResponseBody<Any>): Pair<Int, Int>?
 

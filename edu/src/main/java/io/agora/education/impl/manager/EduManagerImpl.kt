@@ -27,15 +27,20 @@ import io.agora.education.impl.room.data.EduRoomInfoImpl
 import io.agora.education.impl.room.data.RtmConnectState
 import io.agora.education.impl.util.Convert
 import io.agora.education.impl.util.UnCatchExceptionHandler
+import io.agora.education.impl.util.UnCatchExceptionHandler.Companion.hasException
 import io.agora.log.LogManager
 import io.agora.log.UploadManager
+import io.agora.log.UploadManager.Params.AndroidLog
+import io.agora.log.UploadManager.Params.ZIP
 import io.agora.rte.RteCallback
 import io.agora.rte.RteEngineImpl
+import io.agora.rte.data.RtcAppScenario
 import io.agora.rte.data.RteError
 import io.agora.rte.listener.RteEngineEventListener
 import io.agora.rtm.RtmMessage
 import io.agora.rtm.RtmStatusCode
 import okhttp3.logging.HttpLoggingInterceptor
+import org.json.JSONObject
 import java.io.File
 
 internal class EduManagerImpl(
@@ -133,10 +138,20 @@ internal class EduManagerImpl(
 
     override fun release() {
         logMessage("${TAG}: Call release function to exit RTM and release data", LogLevel.INFO)
+        if (hasException()){
+            UnCatchExceptionHandler.getExceptionHandler().uploadAndroidException()
+        }
         RteEngineImpl.logoutRtm()
         RteEngineImpl.dispose()
         eduRooms.clear()
         options.context = null
+    }
+
+    override fun reportAppScenario(appScenario: Int, serviceType: Int, appVersion: String) {
+        val rtcAppScenario = RtcAppScenario(appScenario, serviceType, appVersion)
+        val jsonObject = JSONObject()
+        jsonObject.put("rtc.report_app_scenario", Gson().toJson(rtcAppScenario))
+        RteEngineImpl.setRtcParameters(jsonObject.toString())
     }
 
     override fun logMessage(message: String, level: LogLevel): EduError {
@@ -159,7 +174,7 @@ internal class EduManagerImpl(
 
     override fun uploadDebugItem(item: DebugItem, callback: EduCallback<String>): EduError {
         val uploadParam = UploadManager.UploadParam(BuildConfig.SDK_VERSION, Build.DEVICE,
-                Build.VERSION.SDK, "ZIP", "Android", null)
+                Build.VERSION.SDK, ZIP, "Android", AndroidLog)
         logMessage("${TAG}: Call the uploadDebugItem function to upload logs，parameter->${Gson().toJson(uploadParam)}", LogLevel.INFO)
         UploadManager.upload(options.context!!, APPID, LOG_OSS_CALLBACK_HOST, options.logFileDir!!, uploadParam,
                 object : ThrowableCallback<String> {
@@ -189,11 +204,11 @@ internal class EduManagerImpl(
     override fun onConnectionStateChanged(p0: Int, p1: Int) {
         logMessage("${TAG}: The RTM connection state has changed->state:$p0,reason:$p1", LogLevel.INFO)
         /*断线重连之后，同步至每一个教室*/
-        eduRooms?.forEach {
+        eduRooms.forEach {
             if (rtmConnectState.isReconnecting() &&
                     p0 == RtmStatusCode.ConnectionState.CONNECTION_STATE_CONNECTED) {
                 logMessage("${TAG}: RTM disconnection and reconnected，Request missing sequences in classroom " +
-                        "${(it as EduRoomImpl).getCurRoomUuid()}", LogLevel.INFO)
+                        (it as EduRoomImpl).getCurRoomUuid(), LogLevel.INFO)
                 it.syncSession.fetchLostSequence(object : EduCallback<Unit> {
                     override fun onSuccess(res: Unit?) {
                         /*断线重连之后，数据同步成功之后再把重连成功的事件回调出去*/

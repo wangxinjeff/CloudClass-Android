@@ -1,6 +1,7 @@
 package io.agora.uikit.educontext.handlers
 
 import android.view.ViewGroup
+import io.agora.educontext.EduBoardRoomPhase
 import io.agora.educontext.WhiteboardDrawingConfig
 import io.agora.educontext.eventHandler.IWhiteboardHandler
 
@@ -41,8 +42,7 @@ open class WhiteboardHandler : IWhiteboardHandler {
 
     }
 
-    override fun onLoadingVisible(visible: Boolean) {
-
+    override fun onBoardPhaseChanged(phase: EduBoardRoomPhase) {
     }
 
     override fun onDownloadProgress(url: String, progress: Float) {

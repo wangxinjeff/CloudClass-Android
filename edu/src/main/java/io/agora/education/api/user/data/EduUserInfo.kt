@@ -6,7 +6,7 @@ enum class EduUserRole(var value: Int) {
     EduRoleTypeInvalid(0),
     TEACHER(1),
     STUDENT(2),
-    ASSISTANT(3)
+    ASSISTANT(3);
 }
 
 open class EduBaseUserInfo(

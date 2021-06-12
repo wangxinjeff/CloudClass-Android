@@ -66,6 +66,10 @@ abstract class EduRoom {
 
     abstract fun clearData()
 
+    abstract fun getRtcCallId(id: String): String
+
+    abstract fun getRtmSessionId(id: String): String
+
     /**code:message
      * 1:you haven't joined the room*/
     abstract fun leave(callback: EduCallback<Unit>)

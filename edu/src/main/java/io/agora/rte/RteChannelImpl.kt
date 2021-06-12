@@ -1,5 +1,7 @@
 package io.agora.rte
 
+import android.os.Handler
+import android.os.Message
 import android.util.Log
 import androidx.annotation.NonNull
 import io.agora.report.ReportManager
@@ -9,11 +11,9 @@ import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
 import io.agora.rtc.models.ChannelMediaOptions
 import io.agora.rte.RteEngineImpl.OK
+import io.agora.rte.data.*
 import io.agora.rte.data.RteError.Companion.rtcError
 import io.agora.rte.data.RteError.Companion.rtmError
-import io.agora.rte.data.RteRemoteVideoState
-import io.agora.rte.data.RteRemoteVideoStateChangeReason
-import io.agora.rte.data.RteRemoteVideoStats
 import io.agora.rte.listener.RteChannelEventListener
 import io.agora.rte.listener.RteStatisticsReportListener
 import io.agora.rtm.*
@@ -26,6 +26,8 @@ internal class RteChannelImpl(
         private var eventListener: RteChannelEventListener?
 ) : IRteChannel {
 
+    private var handler: Handler = Handler()
+    private val stateCallbackId: Int = 0x03
     private val tag = RteChannelImpl::class.java.simpleName
     internal var statisticsReportListener: RteStatisticsReportListener? = null
     private val rtmChannelListener = object : RtmChannelListener {
@@ -83,17 +85,22 @@ internal class RteChannelImpl(
             Log.e(tag, String.format("onJoinChannelSuccess channel $rtcChannel uid $uid"))
             ReportManager.getRteReporter().reportRtcJoinResult("1", null, null)
 //            timer?.schedule(rteRemoteVideoStatsCallbackTask, interval, interval)
+
+            joinSuccessTrigger?.countDown()
         }
 
         override fun onUserJoined(rtcChannel: RtcChannel?, uid: Int, elapsed: Int) {
             super.onUserJoined(rtcChannel, uid, elapsed)
             Log.e(tag, "onUserJoined->$uid")
             rteRemoteVideoStatsMap[uid] = RteRemoteVideoStats.convert(IRtcEngineEventHandler.RemoteVideoStats())
+            eventListener?.onUserJoined(uid)
         }
 
         override fun onUserOffline(rtcChannel: RtcChannel?, uid: Int, reason: Int) {
             super.onUserOffline(rtcChannel, uid, reason)
+            Log.e(tag, "onUserOffline->$uid")
             rteRemoteVideoStatsMap.remove(uid)
+            eventListener?.onUserOffline(uid)
         }
 
         override fun onRemoteVideoStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
@@ -106,7 +113,26 @@ internal class RteChannelImpl(
             Log.e(tag, "onRemoteVideoStateChanged->$uid, state->$state, reason->$reason")
             val videoState = RteRemoteVideoState.convert(state)
             val changeReason = RteRemoteVideoStateChangeReason.convert(reason)
+            // Solves a small 3 and 2 interval, resulting in video flickering issues
+            if (videoState == RteRemoteVideoState.REMOTE_VIDEO_STATE_FROZEN.value) {
+                val msg = Message.obtain(handler) {
+                    eventListener?.onRemoteVideoStateChanged(rtcChannel, uid, videoState, changeReason, elapsed)
+                }
+                msg.what = stateCallbackId
+                handler.sendMessageDelayed(msg, 1000)
+                return
+            } else if (videoState == RteRemoteVideoState.REMOTE_VIDEO_STATE_DECODING.value) {
+                handler.removeMessages(stateCallbackId)
+            }
             eventListener?.onRemoteVideoStateChanged(rtcChannel, uid, videoState, changeReason, elapsed)
+        }
+
+        override fun onRemoteAudioStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
+            super.onRemoteAudioStateChanged(rtcChannel, uid, state, reason, elapsed)
+            Log.e(tag, "onRemoteAudioStateChanged->$uid, state->$state, reason->$reason")
+            val videoState = RteRemoteAudioState.convert(state)
+            val changeReason = RteRemoteAudioStateChangeReason.convert(reason)
+            eventListener?.onRemoteAudioStateChanged(rtcChannel, uid, videoState, changeReason, elapsed)
         }
 
         override fun onRemoteVideoStats(rtcChannel: RtcChannel?, stats: IRtcEngineEventHandler.RemoteVideoStats?) {
@@ -131,6 +157,7 @@ internal class RteChannelImpl(
         }
     }
 
+    private var joinSuccessTrigger: JoinSuccessCountDownTrigger? = null
     private val rtmChannel = RteEngineImpl.rtmClient.createChannel(channelId, rtmChannelListener)
     val rtcChannel: RtcChannel = RteEngineImpl.rtcEngine.createRtcChannel(channelId)
     private val rteRemoteVideoStatsMap = mutableMapOf<Int, RteRemoteVideoStats>()
@@ -142,27 +169,67 @@ internal class RteChannelImpl(
             }
         }
     }
+
     private var timer: Timer? = Timer()
+
+    private inner class JoinSuccessCountDownTrigger(
+            private var countDown: Int,
+            private val callback: RteCallback<Void>) {
+
+        @Synchronized
+        fun countDown() {
+            if (countDown == 0) {
+                Log.d("JoinSuccessTrigger0", "latch has been counted down to zero, callback is invoked.")
+                return
+            }
+            countDown--
+            Log.d("JoinSuccessTrigger", "countdown to $countDown")
+            if (countDown == 0) {
+                Log.d("JoinSuccessTrigger1", "latch has been counted down to zero, callback is invoked.")
+                callback.onSuccess(null)
+            }
+        }
+
+        @Synchronized
+        fun countDownFinished(): Boolean {
+            return countDown == 0
+        }
+    }
 
     init {
         rtcChannel.setRtcChannelEventHandler(rtcChannelEventHandler)
     }
 
-    override fun join(rtcOptionalInfo: String, rtcToken: String, rtcUid: Long, mediaOptions: ChannelMediaOptions,
-                      @NonNull callback: RteCallback<Void>) {
-        ReportManager.getRteReporter().reportRtcJoinStart()
-        val rtcCode = rtcChannel.joinChannel(rtcToken, rtcOptionalInfo, rtcUid.toInt(), mediaOptions)
-        joinRtmChannel(rtcCode, callback)
+    override fun join(rtcOptionalInfo: String, rtcToken: String, rtcUid: Long,
+                      mediaOptions: ChannelMediaOptions, callback: RteCallback<Void>) {
+        synchronized(this) {
+            if (joinSuccessTrigger != null) {
+                Log.d(tag, "join has been called, rtc uid $rtcUid")
+                return
+            }
+
+            joinSuccessTrigger = JoinSuccessCountDownTrigger(2, callback)
+            ReportManager.getRteReporter().reportRtcJoinStart()
+            val rtcCode = rtcChannel.joinChannel(rtcToken, rtcOptionalInfo, rtcUid.toInt(), mediaOptions)
+            joinRtmChannel(rtcCode, callback)
+        }
     }
 
     private fun joinRtmChannel(rtcCode: Int, @NonNull callback: RteCallback<Void>) {
+        synchronized(this) {
+            if (joinSuccessTrigger == null || joinSuccessTrigger?.countDownFinished() == true) {
+                Log.d(tag, "join has been called, rtm channel ${rtmChannel.id}")
+                return
+            }
+        }
+
         val reporter = ReportManager.getRteReporter()
         reporter.reportRtmJoinStart()
         rtmChannel.join(object : ResultCallback<Void> {
             override fun onSuccess(p0: Void?) {
                 if (rtcCode == ERR_OK) {
-                    callback.onSuccess(p0)
                     reporter.reportRtmJoinResult("1", null, null)
+                    joinSuccessTrigger?.countDown()
                 } else {
                     callback.onFailure(rtcError(rtcCode))
                     reporter.reportRtmJoinResult("0", rtcCode.toString(), null)
@@ -172,8 +239,8 @@ internal class RteChannelImpl(
             override fun onFailure(p0: ErrorInfo?) {
                 if (p0?.errorCode == JOIN_CHANNEL_ERR_ALREADY_JOINED) {
                     Log.i(tag, "rtm already logged in")
-                    callback.onSuccess(null)
                     reporter.reportRtmJoinResult("1", null, null)
+                    joinSuccessTrigger?.countDown()
                 } else {
                     callback.onFailure(rtmError(p0 ?: ErrorInfo(-1)))
                     reporter.reportRtmJoinResult("0", p0?.errorCode.toString(), null)
@@ -212,5 +279,14 @@ internal class RteChannelImpl(
     override fun release() {
         rtmChannel.release()
         rtcChannel.destroy()
+        handler.removeCallbacksAndMessages(null)
+    }
+
+    override fun getRtcCallId(): String {
+        return rtcChannel.callId
+    }
+
+    override fun getRtmSessionId(): String {
+        return ""
     }
 }

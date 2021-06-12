@@ -1,12 +1,21 @@
 package io.agora.edu.common.bean.response;
 
 public class EduRemoteConfigRes {
+    private int vid;
     private Object theme;
     private NetLessConfig netless;
 
     public EduRemoteConfigRes(Object theme, NetLessConfig netless) {
         this.theme = theme;
         this.netless = netless;
+    }
+
+    public int getVid() {
+        return vid;
+    }
+
+    public void setVid(int vid) {
+        this.vid = vid;
     }
 
     public Object getTheme() {

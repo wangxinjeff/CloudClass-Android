@@ -3,6 +3,7 @@ package io.agora.rte
 import android.content.Context
 import androidx.annotation.NonNull
 import io.agora.rtc.RtcEngine
+import io.agora.rtc.models.ClientRoleOptions
 import io.agora.rtc.video.VideoCanvas
 import io.agora.rtc.video.VideoEncoderConfiguration
 import io.agora.rte.data.RteAudioReverbPreset
@@ -12,6 +13,8 @@ import io.agora.rte.listener.RteStatisticsReportListener
 interface IRteEngine {
     fun init(context: Context, appId: String, logFileDir: String)
 
+    fun setRtcParameters(parameters: String): Int
+
     fun loginRtm(rtmUid: String, rtmToken: String, @NonNull callback: RteCallback<Unit>)
 
     fun logoutRtm()
@@ -19,11 +22,19 @@ interface IRteEngine {
     /**作用于rteChannel*/
     fun createChannel(channelId: String, eventListener: io.agora.rte.listener.RteChannelEventListener): IRteChannel
 
+    fun getRtcCallId(id: String): String
+
+    fun getRtmSessionId(id: String): String
+
+    fun setRemoteRenderMode(channelId: String, uid: Int, mode: Int): Int
+
     /**作用于全局*/
     fun enableLocalMedia(audio: Boolean, video: Boolean): Int
 
     /**作用于rtcChannel*/
     fun setClientRole(channelId: String, role: Int): Int
+
+    fun setClientRole(channelId: String, role: Int, options: ClientRoleOptions): Int
 
     /**作用于rtcChannel*/
     fun publish(channelId: String): Int
@@ -32,7 +43,11 @@ interface IRteEngine {
     fun unpublish(channelId: String): Int
 
     /**作用于全局*/
-    fun updateLocalStream(hasAudio: Boolean, hasVideo: Boolean) :Int
+    fun updateLocalStream(hasAudio: Boolean, hasVideo: Boolean): Int
+
+    fun updateLocalAudioStream(hasAudio: Boolean): Int
+
+    fun updateLocalVideoStream(hasVideo: Boolean): Int
 
     /**作用于rtcChannel*/
     fun muteRemoteStream(channelId: String, uid: Int, muteAudio: Boolean, muteVideo: Boolean): Int
@@ -40,12 +55,21 @@ interface IRteEngine {
     /**作用于全局*/
     fun muteLocalStream(muteAudio: Boolean, muteVideo: Boolean): Int
 
+    fun muteLocalAudioStream(muteAudio: Boolean): Int
+
+    fun muteLocalVideoStream(muteVideo: Boolean): Int
+
     /**作用于全局*/
     fun setVideoEncoderConfiguration(config: VideoEncoderConfiguration): Int
 
     /**作用于全局*/
     fun enableVideo(): Int
     fun enableAudio(): Int
+    fun disableVideo(): Int
+    fun disableAudio(): Int
+
+    fun enableLocalVideo(enabled: Boolean): Int
+    fun enableLocalAudio(enabled: Boolean): Int
 
     /**作用于全局*/
     fun switchCamera(): Int
@@ -53,6 +77,10 @@ interface IRteEngine {
     /**作用于全局*/
     fun setupLocalVideo(local: VideoCanvas): Int
     fun setupRemoteVideo(local: VideoCanvas): Int
+
+    fun setEnableSpeakerphone(enabled: Boolean): Int
+
+    fun isSpeakerphoneEnabled(): Boolean
 
     /*AudioMixing*/
     fun startAudioMixing(filePath: String, loopback: Boolean, replace: Boolean, cycle: Int): Int

@@ -4,9 +4,9 @@ ext {
             'buildToolsVersion': "29.0.3",
             'minSdkVersion'    : 21,
             'targetSdkVersion' : 29,
-            'rtcSDKVersion'    : "2.9.107.144",
+            'rtcSDKVersion'    : "3.2.0",
             'rtmSDKVersion'    : "1.4.1",
-            'boardSDKVersion'  : "2.12.25",
+            'boardSDKVersion'  : "2.12.35",
     ]
     dependencies = [
             'junit:junit'                                     : '4.12',
@@ -25,9 +25,10 @@ ext {
             'com.squareup.retrofit2:retrofit'                 : '2.9.0',
             'com.squareup.retrofit2:converter-gson'           : '2.9.0',
             'com.squareup.okhttp3:logging-interceptor'        : '4.7.2',
+            'com.google.protobuf:protobuf-java'               : '3.17.0',
             'com.elvishew:xlog'                               : '1.6.1',
             'com.aliyun.dpa:oss-android-sdk'                  : '2.9.4',
-            'com.github.agorabuilder:agora-special-full'      : android.rtcSDKVersion,
+            'com.github.agorabuilder:native-full-sdk'         : android.rtcSDKVersion,
             'io.agora.rtm:rtm-sdk'                            : android.rtmSDKVersion,
             'com.github.duty-os:white-sdk-android'            : android.boardSDKVersion,
             'com.github.bumptech.glide:glide'                 : '4.11.0',

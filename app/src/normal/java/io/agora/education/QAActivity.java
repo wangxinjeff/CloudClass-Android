@@ -140,7 +140,8 @@ public class QAActivity extends AppCompatActivity {
                                 scenePath = File.separator.concat(wareRes.getResourceName())
                                         .concat(scenes.get(0).getName());
                                 AgoraEduCourseware courseware = new AgoraEduCourseware(
-                                        wareRes.getResourceName(), scenePath, scenes, url);
+                                        wareRes.getResourceName(), wareRes.getResourceUuid(),
+                                        scenePath, scenes, url);
                                 callback.onSuccess(courseware);
                             } else {
                                 Log.e(TAG, "request courseware failed, response data is null!");
@@ -412,7 +413,8 @@ public class QAActivity extends AppCompatActivity {
 
             AgoraEduLaunchConfig agoraEduLaunchConfig =
                     new AgoraEduLaunchConfig(userName, userUuid, roomName, roomUuid, roleType,
-                            roomType, rtmToken, startTime, duration, region);
+                            roomType, rtmToken, startTime, duration, region, null,
+                            null);
 
             runOnUiThread(() -> {
                 try {

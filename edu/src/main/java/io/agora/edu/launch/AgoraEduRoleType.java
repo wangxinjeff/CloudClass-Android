@@ -20,4 +20,12 @@ public enum AgoraEduRoleType {
    public static final boolean isValid(int type) {
       return type == AgoraEduRoleTypeStudent.value;
    }
+
+   public String toString() {
+      return "student";
+   }
+
+   public static AgoraEduRoleType fromValue(int val) {
+      return AgoraEduRoleTypeStudent;
+   }
 }

@@ -29,7 +29,8 @@ interface AgoraExtAppService {
 
 data class AgoraExtAppUpdateRequest(
         val properties: MutableMap<String, Any?>?,
-        val cause: MutableMap<String, Any?>?
+        val cause: MutableMap<String, Any?>?,
+        val common: MutableMap<String, Any?>?
 )
 
 data class AgoraExtAppDeleteRequest(

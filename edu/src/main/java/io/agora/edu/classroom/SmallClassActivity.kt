@@ -1,10 +1,11 @@
 package io.agora.edu.classroom
 
 import android.os.Bundle
-import android.view.ViewGroup
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
-import android.widget.FrameLayout
+import android.widget.RelativeLayout
 import com.herewhite.sdk.domain.SDKError
+import io.agora.edu.R
+import com.herewhite.sdk.domain.SceneState
 import io.agora.edu.launch.AgoraEduCourseware
 import io.agora.edu.launch.AgoraEduSDK
 import io.agora.education.api.base.EduError
@@ -19,6 +20,9 @@ import io.agora.educontext.EduContextError
 import io.agora.educontext.WhiteboardDrawingConfig
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
+import io.agora.uikit.impl.chat.tabs.ChatTabConfig
+import io.agora.uikit.impl.chat.tabs.TabType
+import io.agora.uikit.impl.container.AgoraContainerConfig
 import io.agora.uikit.interfaces.protocols.AgoraUIContainer
 import io.agora.uikit.impl.container.AgoraContainerType
 
@@ -39,7 +43,23 @@ class SmallClassActivity : BaseClassActivity() {
             getReporter().reportWhiteBoardResult("0", "White board join room fail", null)
         }
 
+        override fun onSceneChanged(state: SceneState) {
+            screenShareManager?.checkAndNotifyScreenShareByScene(state)
+        }
+
         override fun onGrantedChanged() {
+            userListManager?.notifyUserList()
+        }
+    }
+
+    override var deviceManagerEventListener = object : DeviceManagerEventListener {
+        override fun onCameraDeviceEnableChanged(enabled: Boolean) {
+            userListManager?.updateLocalCameraSwitchState(!enabled)
+            userListManager?.notifyUserList()
+        }
+
+        override fun onMicDeviceEnabledChanged(enabled: Boolean) {
+            userListManager?.updateLocalMicSwitchState(!enabled)
             userListManager?.notifyUserList()
         }
     }
@@ -55,7 +75,12 @@ class SmallClassActivity : BaseClassActivity() {
                     container = AgoraUIContainer.create(contentLayout!!,
                             0, 0, contentLayout!!.width,
                             contentLayout!!.height,
-                            AgoraContainerType.SmallClass, eduContext)
+                            AgoraContainerType.SmallClass, eduContext,
+                            AgoraContainerConfig(chatTabConfigs =
+                            listOf(
+                                    ChatTabConfig(getString(R.string.agora_chat_tab_message), TabType.Public, null),
+                                    ChatTabConfig(getString(R.string.agora_chat_tab_private), TabType.Private, null)
+                            )))
 
                     whiteboardContext.getHandlers()?.forEach {
                         it.getBoardContainer()?.let { viewGroup ->
@@ -82,8 +107,8 @@ class SmallClassActivity : BaseClassActivity() {
         })
     }
 
-    override fun onContentViewLayout(): ViewGroup {
-        contentLayout = FrameLayout(this)
+    override fun onContentViewLayout(): RelativeLayout {
+        contentLayout = RelativeLayout(this)
         return contentLayout!!
     }
 
@@ -104,13 +129,11 @@ class SmallClassActivity : BaseClassActivity() {
         screenShareManager?.dispose()
         userListManager?.dispose()
         handsUpManager?.dispose()
-        roomStatusManager?.dispose()
+        roomStateManager?.dispose()
     }
 
     override fun onRemoteUsersInitialized(users: List<EduUserInfo>, classRoom: EduRoom) {
         super.onRemoteUsersInitialized(users, classRoom)
-        whiteBoardManager!!.initBoardWithRoomToken(preCheckData!!.board.boardId,
-                preCheckData!!.board.boardToken, launchConfig!!.userUuid)
     }
 
     override fun onRemoteUsersJoined(users: List<EduUserInfo>, classRoom: EduRoom) {
@@ -183,11 +206,13 @@ class SmallClassActivity : BaseClassActivity() {
 
     override fun onRoomStatusChanged(type: EduRoomChangeType, operatorUser: EduUserInfo?, classRoom: EduRoom) {
         super.onRoomStatusChanged(type, operatorUser, classRoom)
-        roomStatusManager?.updateClassState(type)
+        roomStateManager?.updateClassState(type)
     }
 
-    override fun onRoomPropertiesChanged(classRoom: EduRoom, cause: MutableMap<String, Any>?) {
-        super.onRoomPropertiesChanged(classRoom, cause)
+    override fun onRoomPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                         classRoom: EduRoom, cause: MutableMap<String, Any>?,
+                                         operator: EduBaseUserInfo?) {
+        super.onRoomPropertiesChanged(changedProperties, classRoom, cause, operator)
         handsUpManager?.notifyHandsUpEnable(cause)
         handsUpManager?.notifyHandsUpState(cause)
         userListManager?.notifyListByPropertiesChanged(cause)
@@ -200,8 +225,12 @@ class SmallClassActivity : BaseClassActivity() {
 
     override fun onLocalVideoStateChanged(localVideoState: Int, error: Int) {
         super.onLocalVideoStateChanged(localVideoState, error)
-        teacherVideoManager?.updateLocalCameraState(localVideoState)
-        userListManager?.updateLocalCameraState(localVideoState)
+        userListManager?.updateLocalCameraAvailableState(localVideoState)
+    }
+
+    override fun onLocalAudioStateChanged(localAudioState: Int, error: Int) {
+        super.onLocalAudioStateChanged(localAudioState, error)
+        userListManager?.updateLocalMicAvailableState(localAudioState)
     }
 
     override fun onAudioVolumeIndicationOfLocalSpeaker(speakers: Array<out IRtcEngineEventHandler.AudioVolumeInfo>?, totalVolume: Int) {
@@ -217,10 +246,22 @@ class SmallClassActivity : BaseClassActivity() {
         userListManager?.updateAudioVolumeIndication(speakers)
     }
 
-    override fun onRemoteUserPropertiesChanged(classRoom: EduRoom, userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-        super.onRemoteUserPropertiesChanged(classRoom, userInfo, cause)
-        teacherVideoManager?.updateRemoteCameraState(userInfo, cause)
+    override fun onRemoteUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                               classRoom: EduRoom, userInfo: EduUserInfo,
+                                               cause: MutableMap<String, Any>?, operator: EduBaseUserInfo?) {
+        super.onRemoteUserPropertiesChanged(changedProperties, classRoom, userInfo, cause, operator)
+        teacherVideoManager?.updateRemoteDeviceState(userInfo, cause)
         teacherVideoManager?.notifyUserDetailInfo(EduUserRole.TEACHER)
-        userListManager?.updateRemoteCameraState(userInfo, cause)
+        userListManager?.updateRemoteDeviceState(userInfo, cause)
+        userListManager?.notifyListByPropertiesChanged(cause)
+        chatManager?.notifyUserChatMuteStatus(userInfo, cause, operator)
+    }
+
+    override fun onLocalUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                              userInfo: EduUserInfo, cause: MutableMap<String, Any>?,
+                                              operator: EduBaseUserInfo?) {
+        super.onLocalUserPropertiesChanged(changedProperties, userInfo, cause, operator)
+        userListManager?.notifyListByPropertiesChanged(cause)
+        chatManager?.notifyUserChatMuteStatus(userInfo, cause, operator)
     }
 }

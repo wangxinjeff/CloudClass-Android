@@ -5,7 +5,6 @@ import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
-import android.util.Log
 import android.view.*
 import android.widget.RelativeLayout
 import android.widget.SeekBar

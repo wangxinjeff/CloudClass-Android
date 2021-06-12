@@ -47,15 +47,21 @@ class AgoraUserListVideoLayout(context: Context,
 
     private val listUpdateCallback = object : ListUpdateCallback {
         override fun onInserted(position: Int, count: Int) {
-            mVideoAdapter.notifyItemInserted(position)
+            recyclerView.post {
+                mVideoAdapter.notifyItemRangeInserted(position, count)
+            }
         }
 
         override fun onRemoved(position: Int, count: Int) {
-            mVideoAdapter.notifyItemRemoved(position)
+            recyclerView.post {
+                mVideoAdapter.notifyItemRangeRemoved(position, count)
+            }
         }
 
         override fun onMoved(fromPosition: Int, toPosition: Int) {
-            mVideoAdapter.notifyItemMoved(fromPosition, toPosition)
+            recyclerView.post {
+                mVideoAdapter.notifyItemMoved(fromPosition, toPosition)
+            }
         }
 
         override fun onChanged(position: Int, count: Int, payload: Any?) {
@@ -222,7 +228,11 @@ class AgoraUserListVideoLayout(context: Context,
     }
 
     fun updateCoHostList(list: MutableList<EduContextUserDetailInfo>) {
-        differ.submitList(list.map { VideoItem(it, 0) } as MutableList<VideoItem>)
+        if(list.size > 0) {
+            differ.submitList(list.map { VideoItem(it, 0) } as MutableList<VideoItem>)
+        } else {
+            differ.submitList(null)
+        }
     }
 
     fun updateAudioVolumeIndication(value: Int, streamUuid: String) {
@@ -260,7 +270,7 @@ class AgoraUserListVideoLayout(context: Context,
     }
 
     private inner class CoHostVideoAdapter(val shadowWidth: Float,
-                                           val callback: IAgoraUIUserListListener?): RecyclerView.Adapter<VideoHolder>() {
+                                           val callback: IAgoraUIUserListListener?) : RecyclerView.Adapter<VideoHolder>() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VideoHolder {
             val container = if (AgoraUIConfig.isLargeScreen) {
                 val layout = RatioRelativeLayout(parent.context)
@@ -303,6 +313,7 @@ internal class VideoListItemMatcher : DiffUtil.ItemCallback<VideoItem>() {
                 && oldItem.info.microState == newItem.info.microState
                 && oldItem.info.enableAudio == newItem.info.enableAudio
                 && oldItem.info.enableVideo == newItem.info.enableVideo
+                && oldItem.info.silence == newItem.info.silence
                 && oldItem.info.rewardCount == newItem.info.rewardCount
                 && oldItem.audioVolume == newItem.audioVolume)
     }

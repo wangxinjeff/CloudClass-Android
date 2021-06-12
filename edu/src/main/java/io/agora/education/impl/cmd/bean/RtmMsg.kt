@@ -6,6 +6,10 @@ import io.agora.education.impl.room.data.response.EduFromUserRes
 class RtmMsg(
         val fromUser: EduFromUserRes,
         val message: String,
-        val type: Int?
-) {
-}
+        val type: Int?)
+
+class RtmPeerMsg(
+        val fromUser: EduFromUserRes,
+        val message: String,
+        val peerMessageId: String,
+        val type: Int)

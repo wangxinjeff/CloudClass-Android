@@ -10,13 +10,17 @@ import io.agora.education.api.room.EduRoom
 import io.agora.education.api.room.data.EduRoomChangeType
 import io.agora.education.api.room.data.RoomType
 import io.agora.education.api.stream.data.EduStreamEvent
+import io.agora.education.api.stream.data.EduStreamInfo
+import io.agora.education.api.user.data.EduBaseUserInfo
 import io.agora.education.api.user.data.EduChatState
 import io.agora.education.api.user.data.EduUserEvent
 import io.agora.education.impl.cmd.bean.*
 import io.agora.education.impl.room.EduRoomImpl
 import io.agora.education.impl.util.Convert
 import io.agora.rtc.Constants
+import io.agora.rtc.models.ClientRoleOptions
 import io.agora.rte.RteEngineImpl
+import io.agora.rte.data.RteAudienceLatencyLevel
 
 
 internal class CMDDispatch(private val eduRoom: EduRoom) {
@@ -85,21 +89,33 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                 AgoraLog.i("$TAG->Received RTM message for roomProperty change:${text}")
                 val propertyChangeEvent = Gson().fromJson<CMDResponseBody<CMDRoomPropertyRes>>(
                         text, object : TypeToken<CMDResponseBody<CMDRoomPropertyRes>>() {}.type).data
+                var operator: EduBaseUserInfo? = null
+                propertyChangeEvent.operator?.let {
+                    val role = Convert.convertUserRole(it.role, (eduRoom as EduRoomImpl).getCurRoomType())
+                    operator = EduBaseUserInfo(it.userUuid, it.userName, role)
+                }
                 /**把变化(update or delete)的属性更新到本地*/
                 CMDDataMergeProcessor.updateRoomProperties(eduRoom, propertyChangeEvent)
                 /**通知用户房间属性发生改变*/
                 AgoraLog.i("$TAG->Callback the received roomProperty to upper layer")
-                cmdCallbackManager.onRoomPropertyChanged(eduRoom, propertyChangeEvent.cause)
+                cmdCallbackManager.onRoomPropertyChanged(propertyChangeEvent.changeProperties,
+                        eduRoom, propertyChangeEvent.cause, operator)
             }
             CMDId.RoomPropertiesChanged.value -> {
                 AgoraLog.i("$TAG->Received RTM message for roomProperties change:${text}")
                 val propertyChangeEvent = Gson().fromJson<CMDResponseBody<CMDRoomPropertyRes>>(
                         text, object : TypeToken<CMDResponseBody<CMDRoomPropertyRes>>() {}.type).data
+                var operator: EduBaseUserInfo? = null
+                propertyChangeEvent.operator?.let {
+                    val role = Convert.convertUserRole(it.role, (eduRoom as EduRoomImpl).getCurRoomType())
+                    operator = EduBaseUserInfo(it.userUuid, it.userName, role)
+                }
                 /**把变化(update or delete)的属性更新到本地*/
                 CMDDataMergeProcessor.updateRoomProperties2(eduRoom, propertyChangeEvent)
                 /**通知用户房间属性发生改变*/
                 AgoraLog.i("$TAG->Callback the received roomProperties to upper layer")
-                cmdCallbackManager.onRoomPropertyChanged(eduRoom, propertyChangeEvent.cause)
+                cmdCallbackManager.onRoomPropertyChanged(propertyChangeEvent.changeProperties,
+                        eduRoom, propertyChangeEvent.cause, operator)
             }
             CMDId.ChannelMsgReceived.value -> {
                 /**频道内的聊天消息*/
@@ -224,15 +240,20 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                 AgoraLog.e(TAG, "Receive RTM of userProperty change: $text")
                 val cmdUserPropertyRes = Gson().fromJson<CMDResponseBody<CMDUserPropertyRes>>(text, object :
                         TypeToken<CMDResponseBody<CMDUserPropertyRes>>() {}.type).data
+                var operator: EduBaseUserInfo? = null
+                cmdUserPropertyRes.operator?.let {
+                    val role = Convert.convertUserRole(it.role, (eduRoom as EduRoomImpl).getCurRoomType())
+                    operator = EduBaseUserInfo(it.userUuid, it.userName, role)
+                }
                 val updatedUserInfo = CMDDataMergeProcessor.updateUserProperties(cmdUserPropertyRes,
                         (eduRoom as EduRoomImpl).getCurUserList())
                 updatedUserInfo?.let {
                     if (updatedUserInfo == eduRoom.getCurLocalUserInfo()) {
-                        cmdCallbackManager.onLocalUserPropertiesUpdated(cmdUserPropertyRes.cause,
-                                eduRoom.getCurLocalUser())
+                        cmdCallbackManager.onLocalUserPropertiesUpdated(cmdUserPropertyRes.changeProperties,
+                                cmdUserPropertyRes.cause, eduRoom.getCurLocalUser(), operator)
                     } else {
-                        cmdCallbackManager.onRemoteUserPropertiesUpdated(eduRoom, it,
-                                cmdUserPropertyRes.cause)
+                        cmdCallbackManager.onRemoteUserPropertiesUpdated(cmdUserPropertyRes.changeProperties,
+                                eduRoom, it, cmdUserPropertyRes.cause, operator)
                     }
                 }
             }
@@ -240,15 +261,20 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                 AgoraLog.e(TAG, "Receive RTM of userProperty change: $text")
                 val cmdUserPropertyRes = Gson().fromJson<CMDResponseBody<CMDUserPropertyRes>>(text, object :
                         TypeToken<CMDResponseBody<CMDUserPropertyRes>>() {}.type).data
+                var operator: EduBaseUserInfo? = null
+                cmdUserPropertyRes.operator?.let {
+                    val role = Convert.convertUserRole(it.role, (eduRoom as EduRoomImpl).getCurRoomType())
+                    operator = EduBaseUserInfo(it.userUuid, it.userName, role)
+                }
                 val updatedUserInfo = CMDDataMergeProcessor.updateUserProperties2(cmdUserPropertyRes,
                         (eduRoom as EduRoomImpl).getCurUserList())
                 updatedUserInfo?.let {
                     if (updatedUserInfo == eduRoom.getCurLocalUserInfo()) {
-                        cmdCallbackManager.onLocalUserPropertiesUpdated(cmdUserPropertyRes.cause,
-                                eduRoom.getCurLocalUser())
+                        cmdCallbackManager.onLocalUserPropertiesUpdated(cmdUserPropertyRes.changeProperties,
+                                cmdUserPropertyRes.cause, eduRoom.getCurLocalUser(), operator)
                     } else {
-                        cmdCallbackManager.onRemoteUserPropertiesUpdated(eduRoom, it,
-                                cmdUserPropertyRes.cause)
+                        cmdCallbackManager.onRemoteUserPropertiesUpdated(cmdUserPropertyRes.changeProperties,
+                                eduRoom, it, cmdUserPropertyRes.cause, operator)
                     }
                 }
             }
@@ -271,6 +297,7 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                 val validAddedStreams = mutableListOf<EduStreamEvent>()
                 val validUpdatedStreams = mutableListOf<EduStreamEvent>()
                 val validRemovedStreams = mutableListOf<EduStreamEvent>()
+                var oldStreams = mutableListOf<EduStreamInfo>() //last stream
                 /**根据回调数据，维护本地存储的流列表;并获取有效的数据*/
                 cmdStreamsActionMsg?.streams?.forEach {
                     when (it.action) {
@@ -283,6 +310,13 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                             }
                         }
                         CMDStreamAction.Modify.value -> {
+                            val iterable = eduRoom.getCurStreamList().iterator()
+                            while (iterable.hasNext()) {
+                                val element = iterable.next()
+                                if (element.publisher == eduRoom.getCurLocalUserInfo()) {
+                                    oldStreams.add(element)
+                                }
+                            }
                             val streamInfo = CMDDataMergeProcessor.updateStreamWithAction(it,
                                     eduRoom.getCurStreamList(), eduRoom.getCurRoomType())
                             streamInfo?.let { stream ->
@@ -311,7 +345,8 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                         val element = iterable.next()
                         val streamInfo = element.modifiedStream
                         if (streamInfo.publisher == eduRoom.getCurLocalUserInfo()) {
-                            RteEngineImpl.updateLocalStream(streamInfo.hasAudio, streamInfo.hasVideo)
+                            RteEngineImpl.updateLocalAudioStream(streamInfo.hasAudio)
+                            RteEngineImpl.updateLocalVideoStream(streamInfo.hasVideo)
                             RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(),
                                     Constants.CLIENT_ROLE_BROADCASTER)
                             RteEngineImpl.publish(eduRoom.getCurRoomUuid())
@@ -328,10 +363,26 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                         val element = iterable.next()
                         val streamInfo = element.modifiedStream
                         if (streamInfo.publisher == eduRoom.getCurLocalUserInfo()) {
-                            RteEngineImpl.updateLocalStream(streamInfo.hasAudio, streamInfo.hasVideo)
-                            RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(),
-                                    Constants.CLIENT_ROLE_BROADCASTER)
-                            RteEngineImpl.publish(eduRoom.getCurRoomUuid())
+                            if (operator != streamInfo.publisher) {
+                                if (oldStreams.size == 0) {
+                                    RteEngineImpl.updateLocalStream(streamInfo.hasAudio, streamInfo.hasVideo)
+                                } else {
+                                    //compare the uuid with the old stream list
+                                    //if one of the uuid of the old list is equal to the current stream ,compare the hasXXX
+                                    oldStreams.find { it.streamUuid == streamInfo.streamUuid }?.let {
+                                        if (streamInfo.hasAudio != it.hasAudio) {//update hasAudio when it is not the same with the old one
+                                            RteEngineImpl.updateLocalAudioStream(streamInfo.hasAudio)
+                                        }
+
+                                        if (streamInfo.hasVideo != it.hasVideo) {
+                                            RteEngineImpl.updateLocalVideoStream(streamInfo.hasVideo)
+                                        }
+                                    }
+                                }
+                                RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(),
+                                        Constants.CLIENT_ROLE_BROADCASTER)
+                                RteEngineImpl.publish(eduRoom.getCurRoomUuid())
+                            }
                             val event = EduStreamEvent(streamInfo, operator)
                             validUpdatedLocalStreams.add(event)
                             iterable.remove()
@@ -345,7 +396,12 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
                         val element = iterable.next()
                         val streamInfo = element.modifiedStream
                         if (streamInfo.publisher == eduRoom.getCurLocalUserInfo()) {
-                            RteEngineImpl.updateLocalStream(streamInfo.hasAudio, streamInfo.hasVideo)
+                            val options = ClientRoleOptions()
+                            options.audienceLatencyLevel = RteAudienceLatencyLevel.LOW.value
+                            RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(),
+                                    Constants.CLIENT_ROLE_AUDIENCE, options)
+                            RteEngineImpl.updateLocalAudioStream(streamInfo.hasAudio)
+                            RteEngineImpl.updateLocalVideoStream(streamInfo.hasVideo)
                             RteEngineImpl.unpublish(eduRoom.getCurRoomUuid())
                             val event = EduStreamEvent(streamInfo, operator)
                             validRemovedLocalStreams.add(event)
@@ -404,12 +460,12 @@ internal class CMDDispatch(private val eduRoom: EduRoom) {
 
         when (cmdResponseBody.cmd) {
             CMDId.PeerMsgReceived.value -> {
-                /**点对点消息*/
-                val eduMsg = CMDUtil.buildEduMsg(text, eduRoom) as EduChatMsg
-                cmdCallbackManager.onUserChatMessageReceived(eduMsg, listener)
+                CMDUtil.buildPeerEduMsg(text)?.let { msg ->
+                    cmdCallbackManager.onUserChatMessageReceived(msg, listener)
+                }
             }
             CMDId.PeerCustomMsgReceived.value -> {
-                /**点对点的自定义消息(可以是用户自定义的信令)*/
+                // Custom peer to peer messages defined by users
                 val eduMsg = CMDUtil.buildEduMsg(text, eduRoom)
                 cmdCallbackManager.onUserMessageReceived(eduMsg, listener)
             }

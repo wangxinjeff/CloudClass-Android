@@ -13,6 +13,7 @@ enum class DegradationPreference {
 }
 
 object VideoDimensions {
+    val VideoDimensions_720X1280 = arrayOf(720, 1280)
     val VideoDimensions_640X480 = arrayOf(640, 480)
     val VideoDimensions_320X240 = arrayOf(320, 240)
     val VideoDimensions_360X240 = arrayOf(360, 240)

@@ -6,6 +6,7 @@ class CMDUserPropertyRes(
         val fromUser: EduBaseUserInfo,
         action: Int,
         changeProperties: MutableMap<String, Any>,
-        cause: MutableMap<String, Any>?
-) : CMDRoomPropertyRes(action, changeProperties, cause) {
+        cause: MutableMap<String, Any>?,
+        operator: OperatorUserInfo?
+) : CMDRoomPropertyRes(action, changeProperties, cause, operator) {
 }

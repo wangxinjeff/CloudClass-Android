@@ -4,6 +4,7 @@ import io.agora.education.api.message.EduChatMsg
 import io.agora.education.api.message.EduMsg
 import io.agora.education.api.room.EduRoom
 import io.agora.education.api.room.data.EduRoomChangeType
+import io.agora.education.api.statistics.ConnectionState
 import io.agora.education.api.statistics.NetworkQuality
 import io.agora.education.api.stream.data.EduStreamEvent
 import io.agora.education.api.stream.data.EduStreamInfo
@@ -11,7 +12,6 @@ import io.agora.education.api.user.data.EduBaseUserInfo
 import io.agora.education.api.user.data.EduUserEvent
 import io.agora.education.api.user.data.EduUserInfo
 import io.agora.education.api.user.data.EduUserStateChangeType
-import io.agora.educontext.EduContextConnectionState
 
 interface EduRoomEventListener {
 
@@ -23,7 +23,9 @@ interface EduRoomEventListener {
 
     fun onRemoteUserUpdated(userEvent: EduUserEvent, type: EduUserStateChangeType, classRoom: EduRoom)
 
-    fun onRemoteUserPropertiesChanged(classRoom: EduRoom, userInfo: EduUserInfo, cause: MutableMap<String, Any>?)
+    fun onRemoteUserPropertiesChanged(changedProperties: MutableMap<String, Any>, classRoom: EduRoom,
+                                      userInfo: EduUserInfo, cause: MutableMap<String, Any>?,
+                                      operator: EduBaseUserInfo?)
 
     fun onRoomMessageReceived(message: EduMsg, classRoom: EduRoom)
 
@@ -37,13 +39,18 @@ interface EduRoomEventListener {
 
     fun onRemoteStreamsRemoved(streamEvents: MutableList<EduStreamEvent>, classRoom: EduRoom)
 
+    fun onRemoteRTCJoinedOfStreamId(streamUuid: String)
+
+    fun onRemoteRTCOfflineOfStreamId(streamUuid: String)
+
     fun onRoomStatusChanged(type: EduRoomChangeType, operatorUser: EduUserInfo?, classRoom: EduRoom)
 
     /**引起roomProperty发生改变的原因
      * 对应EduUser中的updateRoomProperty*/
-    fun onRoomPropertiesChanged(classRoom: EduRoom, cause: MutableMap<String, Any>?)
+    fun onRoomPropertiesChanged(changedProperties: MutableMap<String, Any>, classRoom: EduRoom,
+                                cause: MutableMap<String, Any>?, operator: EduBaseUserInfo?)
 
     fun onNetworkQualityChanged(quality: NetworkQuality, user: EduBaseUserInfo, classRoom: EduRoom)
 
-    fun onConnectionStateChanged(state: EduContextConnectionState, classRoom: EduRoom)
+    fun onConnectionStateChanged(state: ConnectionState, classRoom: EduRoom)
 }

@@ -5,9 +5,12 @@ import android.graphics.Rect
 import android.view.ViewGroup
 import io.agora.educontext.EduContextPool
 import io.agora.educontext.EduContextVideoMode
+import io.agora.uicomponent.UiWidgetManager
 import io.agora.uikit.R
 import io.agora.uikit.impl.chat.AgoraUIChatWindow
+import io.agora.uikit.impl.loading.AgoraUILoading
 import io.agora.uikit.impl.room.AgoraUIRoomStatus
+import io.agora.uikit.impl.screenshare.AgoraUIFullScreenBtn
 import io.agora.uikit.impl.screenshare.AgoraUIScreenShare
 import io.agora.uikit.impl.tool.AgoraUIToolBarBuilder
 import io.agora.uikit.impl.tool.AgoraUIToolType
@@ -15,7 +18,9 @@ import io.agora.uikit.impl.video.AgoraUIVideoGroup
 import io.agora.uikit.impl.whiteboard.AgoraUIWhiteBoardBuilder
 import io.agora.uikit.impl.whiteboard.paging.AgoraUIPagingControlBuilder
 
-class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduContext) {
+class AgoraUI1v1Container(
+        eduContext: EduContextPool?,
+        configs: AgoraContainerConfig) : AbsUIContainer(eduContext, configs) {
     private val tag = "AgoraUI1v1Container"
 
     private var statusBarHeight = 0
@@ -36,6 +41,8 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
     private val fullScreenRect = Rect()
 
     private var isFullScreen = false
+
+    private val widgetManager = UiWidgetManager()
 
     override fun init(layout: ViewGroup, left: Int, top: Int, width: Int, height: Int) {
         super.init(layout, left, top, width, height)
@@ -63,21 +70,22 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
 
         val whiteboardW = width - videoLayoutW - margin - border * 2
         val whiteboardH = height - statusBarHeight - margin - border
-        whiteboardRect.set(border, statusBarHeight + margin,
-                border + whiteboardW, height - border)
-        whiteboardWindow = AgoraUIWhiteBoardBuilder(layout.context, getEduContext(), layout)
-                .width(whiteboardW)
-                .height(whiteboardH)
-                .top(statusBarHeight + margin.toFloat())
-                .shadowWidth(0f).build()
-        whiteboardWindow!!.setContainer(this)
-        fullScreenRect.set(border, statusBarHeight + margin, width - border, height - border)
-
         screenShareWindow = AgoraUIScreenShare(layout.context,
                 getEduContext(), layout,
                 whiteboardW, whiteboardH, border,
                 statusBarHeight + margin, 0f)
         screenShareWindow!!.setContainer(this)
+
+        whiteboardRect.set(border, statusBarHeight + margin,
+                border + whiteboardW, height - border)
+        whiteboardWindow = AgoraUIWhiteBoardBuilder(layout.context, getEduContext(), layout)
+                .width(whiteboardW)
+                .height(whiteboardH)
+                .left(border.toFloat())
+                .top(statusBarHeight + margin.toFloat())
+                .shadowWidth(0f).build()
+        whiteboardWindow!!.setContainer(this)
+        fullScreenRect.set(border, statusBarHeight + margin, width - border, height - border)
 
         val pagingControlHeight = layout.context.resources.getDimensionPixelSize(R.dimen.agora_paging_control_height)
         val pagingControlLeft = componentMargin
@@ -89,6 +97,14 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
                 .shadowWidth(shadow.toFloat())
                 .build()
         pageControlWindow!!.setContainer(this)
+
+        val fullScreenBtnWidth = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnHeight = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnLeft = 0
+        val fullScreenBtnTop = height - fullScreenBtnHeight - border
+        fullScreenBtn = AgoraUIFullScreenBtn(layout.context, getEduContext(), layout,
+                fullScreenBtnWidth, fullScreenBtnHeight, fullScreenBtnLeft, fullScreenBtnTop)
+        fullScreenBtn!!.setContainer(this)
 
         toolbar = AgoraUIToolBarBuilder(layout.context, getEduContext(), layout)
                 .foldTop(whiteboardRect.top + componentMargin)
@@ -113,11 +129,12 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
             messageHeight = height - componentMargin - messageTop
         }
         chatRect.set(messageLeft, messageTop, messageLeft + videoLayoutW, messageTop + messageHeight)
-        chatWindow = AgoraUIChatWindow(layout,
-                getEduContext(), videoLayoutW, messageHeight,
-                messageLeft, messageTop, shadow)
-        chatWindow!!.setContainer(this)
-        chatWindow!!.show(false)
+
+        chatWindow = widgetManager.create(UiWidgetManager.DefaultWidgetId.Chat.name, getEduContext()) as? AgoraUIChatWindow
+        chatWindow?.setTabConfig(config.chatTabConfigs)
+        chatWindow?.init(layout, videoLayoutW, messageHeight, messageLeft, messageTop)
+        chatWindow?.setContainer(this)
+        chatWindow?.show(false)
 
         val chatFullScreenRight = width - border - componentMargin
         val chatFullScreenBottom = height - componentMargin
@@ -125,6 +142,9 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
         val chatFullScreenHideTop = chatFullScreenBottom - chatWindow?.hideIconSize!!
         val chatFullScreenHideLeft = chatFullScreenRight - chatWindow?.hideIconSize!!
         chatFullScreenHideRect.set(chatFullScreenHideLeft, chatFullScreenHideTop, chatFullScreenRight, chatFullScreenBottom)
+
+        // add loading(show/hide follow rtmConnectionState)
+        agoraUILoading = AgoraUILoading(layout, whiteboardRect)
     }
 
     override fun resize(layout: ViewGroup, left: Int, top: Int, width: Int, height: Int) {
@@ -153,25 +173,35 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
 
         val whiteboardW = width - videoLayoutW - margin - border * 2
         val whiteboardH = height - statusBarHeight - margin - border
-        whiteboardRect.set(border, statusBarHeight + margin,
-                border + whiteboardW, height - border)
-        whiteboardWindow?.let {
-            rect = Rect(0, statusBarHeight + margin, whiteboardW, whiteboardH + statusBarHeight + margin)
-            it.setRect(rect)
-        }
-        fullScreenRect.set(border, statusBarHeight + margin, width - border, height - border)
-
         screenShareWindow?.let {
             rect = Rect(border, statusBarHeight + margin, whiteboardW + border,
                     whiteboardH + statusBarHeight + margin)
             it.setRect(rect)
         }
 
+        whiteboardRect.set(border, statusBarHeight + margin,
+                border + whiteboardW, height - border)
+        whiteboardWindow?.let {
+            rect = Rect(border, statusBarHeight + margin, whiteboardW, whiteboardH + statusBarHeight + margin)
+            it.setRect(rect)
+        }
+        fullScreenRect.set(border, statusBarHeight + margin, width - border, height - border)
+
         val pagingControlHeight = layout.context.resources.getDimensionPixelSize(R.dimen.agora_paging_control_height)
         val pagingControlLeft = componentMargin
         val pagingControlTop = height - pagingControlHeight - border - componentMargin
         pageControlWindow?.let {
             rect = Rect(pagingControlLeft, pagingControlTop, 0, pagingControlHeight + pagingControlTop)
+            it.setRect(rect)
+        }
+
+        val fullScreenBtnWidth = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnHeight = layout.context.resources.getDimensionPixelSize(R.dimen.full_screen_btn_size)
+        val fullScreenBtnLeft = 0
+        val fullScreenBtnTop = height - fullScreenBtnHeight - border
+        fullScreenBtn?.let {
+            rect = Rect(fullScreenBtnLeft, fullScreenBtnTop, fullScreenBtnLeft + fullScreenBtnWidth,
+                    fullScreenBtnTop + fullScreenBtnHeight)
             it.setRect(rect)
         }
 
@@ -210,6 +240,7 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
                 it.show(it.isShowing())
                 it.setRect(if (it.isShowing()) chatFullScreenRect else chatFullScreenHideRect)
             }
+            agoraUILoading?.setRect(fullScreenRect)
         } else {
             whiteboardWindow?.setRect(whiteboardRect)
             screenShareWindow?.setRect(whiteboardRect)
@@ -219,6 +250,7 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
                 it.show(it.isShowing())
                 it.setRect(chatRect)
             }
+            agoraUILoading?.setRect(whiteboardRect)
         }
     }
 
@@ -246,18 +278,25 @@ class AgoraUI1v1Container(eduContext: EduContextPool?) : AbsUIContainer(eduConte
             chatWindow?.setFullscreenRect(fullScreen, chatFullScreenHideRect)
             chatWindow?.setFullDisplayRect(chatFullScreenRect)
             chatWindow?.show(false)
+            agoraUILoading?.setRect(fullScreenRect)
         } else {
             whiteboardWindow?.setRect(whiteboardRect)
             screenShareWindow?.setRect(whiteboardRect)
             // chatWindow?.setFullscreenRect(fullScreen, chatRect)
             chatWindow?.setFullDisplayRect(chatRect)
             chatWindow?.show(false)
+            agoraUILoading?.setRect(whiteboardRect)
         }
     }
 
     override fun calculateVideoSize() {
         AgoraUIConfig.OneToOneClass.teacherVideoWidth =
                 minOf((AgoraUIConfig.videoWidthMaxRatio * width).toInt(), AgoraUIConfig.OneToOneClass.teacherVideoWidth)
+    }
+
+    override fun release() {
+        chatWindow?.release()
+        widgetManager.release()
     }
 
     override fun willLaunchExtApp(appIdentifier: String): Int {

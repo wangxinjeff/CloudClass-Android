@@ -28,7 +28,7 @@ class TeacherVideoManager(
     override var tag = "TeacherVideoManager"
 
     var container: ViewGroup? = null
-    var teacherStreamUuid: String = ""
+    var teacherCameraStreamUuid: String = ""
 
     var managerEventListener: TeacherVideoManagerEventListener? = null
 
@@ -51,33 +51,23 @@ class TeacherVideoManager(
         }
 
         override fun onRendererContainer(viewGroup: ViewGroup?, streamUuid: String) {
-            getCurRoomFullStream(object : EduCallback<MutableList<EduStreamInfo>> {
-                override fun onSuccess(res: MutableList<EduStreamInfo>?) {
-                    res?.forEach {
-                        if (it.streamUuid == streamUuid) {
-                            container = viewGroup
-                            teacherStreamUuid = streamUuid
-                            eduUser.setStreamView(it, launchConfig.roomUuid, viewGroup, !screenShareStarted())
-                            return@forEach
-                        }
-                    }
-                }
-
-                override fun onFailure(error: EduError) {
-                }
-            })
+            renderVideo(viewGroup, streamUuid)
         }
     }
 
     fun renderVideo(viewGroup: ViewGroup?, streamUuid: String) {
         getCurRoomFullStream(object : EduCallback<MutableList<EduStreamInfo>> {
             override fun onSuccess(res: MutableList<EduStreamInfo>?) {
-                res?.forEach {
-                    if (it.streamUuid == streamUuid) {
-                        container = viewGroup
-                        teacherStreamUuid = streamUuid
-                        eduUser.setStreamView(it, launchConfig.roomUuid, viewGroup, !screenShareStarted())
-                        return@forEach
+                res?.let { list ->
+                    val iterator = list.iterator()
+                    while (iterator.hasNext()) {
+                        val it = iterator.next()
+                        if (it.streamUuid == streamUuid) {
+                            container = viewGroup
+                            teacherCameraStreamUuid = streamUuid
+                            eduUser.setStreamView(it, launchConfig.roomUuid, viewGroup, !screenShareStarted())
+                            return@let
+                        }
                     }
                 }
             }
@@ -125,7 +115,7 @@ class TeacherVideoManager(
                                         userDetailInfo.enableAudio = stream.hasAudio
                                         notifyUserDeviceState(userDetailInfo, object : EduCallback<Unit> {
                                             override fun onSuccess(res: Unit?) {
-                                                if(!curUserDetailInfoMap.containsValue(userDetailInfo)) {
+                                                if (!curUserDetailInfoMap.containsValue(userDetailInfo)) {
                                                     curUserDetailInfoMap[userInfo] = userDetailInfo
                                                     videoContext.getHandlers()?.forEach { handler ->
                                                         handler.onUserDetailInfoUpdated(userDetailInfo)
@@ -164,7 +154,7 @@ class TeacherVideoManager(
                                         userDetailInfo.enableAudio = stream.hasAudio
                                         notifyUserDeviceState(userDetailInfo, object : EduCallback<Unit> {
                                             override fun onSuccess(res: Unit?) {
-                                                if(curUserDetailInfoMap.containsValue(userDetailInfo)) {
+                                                if (curUserDetailInfoMap.containsValue(userDetailInfo)) {
                                                     curUserDetailInfoMap[userInfo] = userDetailInfo
                                                     videoContext.getHandlers()?.forEach { handler ->
                                                         handler.onUserDetailInfoUpdated(userDetailInfo)

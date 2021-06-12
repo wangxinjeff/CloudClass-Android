@@ -1,10 +1,11 @@
 package io.agora.edu.classroom
 
 import android.os.Bundle
-import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.widget.FrameLayout
+import android.widget.RelativeLayout
 import com.herewhite.sdk.domain.SDKError
+import io.agora.edu.R
+import com.herewhite.sdk.domain.SceneState
 import io.agora.edu.launch.AgoraEduCourseware
 import io.agora.edu.launch.AgoraEduSDK
 import io.agora.education.api.base.EduError
@@ -14,11 +15,15 @@ import io.agora.education.api.room.data.EduRoomChangeType
 import io.agora.education.api.stream.data.EduStreamEvent
 import io.agora.education.api.stream.data.EduStreamInfo
 import io.agora.education.api.user.EduStudent
+import io.agora.education.api.user.data.EduBaseUserInfo
 import io.agora.education.api.user.data.EduUserInfo
 import io.agora.education.api.user.data.EduUserRole
 import io.agora.educontext.*
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
+import io.agora.uikit.impl.chat.tabs.ChatTabConfig
+import io.agora.uikit.impl.chat.tabs.TabType
+import io.agora.uikit.impl.container.AgoraContainerConfig
 import io.agora.uikit.impl.container.AgoraContainerType
 import io.agora.uikit.interfaces.protocols.AgoraUIContainer
 
@@ -39,8 +44,24 @@ class OneToOneClassActivity : BaseClassActivity() {
             getReporter().reportWhiteBoardResult("0", "White board join room fail", null)
         }
 
+        override fun onSceneChanged(state: SceneState) {
+            screenShareManager?.checkAndNotifyScreenShareByScene(state)
+        }
+
         override fun onGrantedChanged() {
             // notify student`s grantedIc
+            oneToOneVideoManager?.notifyUserDetailInfo(EduUserRole.STUDENT)
+        }
+    }
+
+    override var deviceManagerEventListener = object : DeviceManagerEventListener {
+        override fun onCameraDeviceEnableChanged(enabled: Boolean) {
+            oneToOneVideoManager?.updateLocalCameraSwitchState(!enabled)
+            oneToOneVideoManager?.notifyUserDetailInfo(EduUserRole.STUDENT)
+        }
+
+        override fun onMicDeviceEnabledChanged(enabled: Boolean) {
+            oneToOneVideoManager?.updateLocalMicSwitchState(!enabled)
             oneToOneVideoManager?.notifyUserDetailInfo(EduUserRole.STUDENT)
         }
     }
@@ -60,7 +81,12 @@ class OneToOneClassActivity : BaseClassActivity() {
                                     contentLayout!!.width,
                                     contentLayout!!.height,
                                     AgoraContainerType.OneToOne,
-                                    eduContext)
+                                    eduContext,
+                                    AgoraContainerConfig(chatTabConfigs =
+                                    listOf(ChatTabConfig(getString(
+                                            R.string.agora_chat_tab_message),
+                                            TabType.Public, null)
+                                    )))
 
                             whiteboardContext.getHandlers()?.forEach {
                                 it.getBoardContainer()?.let { viewGroup ->
@@ -94,8 +120,8 @@ class OneToOneClassActivity : BaseClassActivity() {
                 needUserListener = true)
     }
 
-    override fun onContentViewLayout(): ViewGroup {
-        contentLayout = FrameLayout(this)
+    override fun onContentViewLayout(): RelativeLayout {
+        contentLayout = RelativeLayout(this)
         return contentLayout!!
     }
 
@@ -105,8 +131,6 @@ class OneToOneClassActivity : BaseClassActivity() {
 
     override fun onRemoteUsersInitialized(users: List<EduUserInfo>, classRoom: EduRoom) {
         super.onRemoteUsersInitialized(users, classRoom)
-        whiteBoardManager!!.initBoardWithRoomToken(preCheckData!!.board.boardId,
-                preCheckData!!.board.boardToken, launchConfig!!.userUuid)
     }
 
     override fun onRoomChatMessageReceived(chatMsg: EduChatMsg, classRoom: EduRoom) {
@@ -114,8 +138,9 @@ class OneToOneClassActivity : BaseClassActivity() {
         val item = EduContextChatItem(
                 chatMsg.fromUser.userName ?: "",
                 chatMsg.fromUser.userUuid ?: "",
+                chatMsg.fromUser.role?.value ?: EduContextUserRole.Student.value,
                 chatMsg.message,
-                chatMsg.messageId,
+                "${chatMsg.messageId}",
                 EduContextChatItemType.Text,
                 EduContextChatSource.Remote,
                 EduContextChatState.Success,
@@ -168,7 +193,7 @@ class OneToOneClassActivity : BaseClassActivity() {
 
     override fun onRoomStatusChanged(type: EduRoomChangeType, operatorUser: EduUserInfo?, classRoom: EduRoom) {
         super.onRoomStatusChanged(type, operatorUser, classRoom)
-        roomStatusManager?.updateClassState(type)
+        roomStateManager?.updateClassState(type)
     }
 
     override fun onRemoteVideoStateChanged(rtcChannel: RtcChannel?, uid: Int, state: Int, reason: Int, elapsed: Int) {
@@ -178,7 +203,12 @@ class OneToOneClassActivity : BaseClassActivity() {
 
     override fun onLocalVideoStateChanged(localVideoState: Int, error: Int) {
         super.onLocalVideoStateChanged(localVideoState, error)
-        oneToOneVideoManager?.updateLocalCameraState(localVideoState)
+        oneToOneVideoManager?.updateLocalCameraAvailableState(localVideoState)
+    }
+
+    override fun onLocalAudioStateChanged(localAudioState: Int, error: Int) {
+        super.onLocalAudioStateChanged(localAudioState, error)
+        oneToOneVideoManager?.updateLocalMicAvailableState(localAudioState)
     }
 
     override fun onAudioVolumeIndicationOfLocalSpeaker(speakers: Array<out IRtcEngineEventHandler.AudioVolumeInfo>?, totalVolume: Int) {
@@ -191,9 +221,17 @@ class OneToOneClassActivity : BaseClassActivity() {
         oneToOneVideoManager?.updateAudioVolume(speakers)
     }
 
-    override fun onRemoteUserPropertiesChanged(classRoom: EduRoom, userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-        super.onRemoteUserPropertiesChanged(classRoom, userInfo, cause)
-        oneToOneVideoManager?.updateRemoteCameraState(userInfo, cause)
+    override fun onRemoteUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                               classRoom: EduRoom, userInfo: EduUserInfo,
+                                               cause: MutableMap<String, Any>?, operator: EduBaseUserInfo?) {
+        super.onRemoteUserPropertiesChanged(changedProperties, classRoom, userInfo, cause, operator)
+        oneToOneVideoManager?.updateRemoteDeviceState(userInfo, cause)
         oneToOneVideoManager?.notifyUserDetailInfo(EduUserRole.TEACHER)
+    }
+
+    override fun onLocalUserPropertiesChanged(changedProperties: MutableMap<String, Any>,
+                                              userInfo: EduUserInfo, cause: MutableMap<String, Any>?,
+                                              operator: EduBaseUserInfo?) {
+        super.onLocalUserPropertiesChanged(changedProperties, userInfo, cause, operator)
     }
 }

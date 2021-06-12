@@ -5,14 +5,12 @@ import io.agora.education.api.manager.listener.EduManagerEventListener
 import io.agora.education.api.message.EduActionMessage
 import io.agora.education.api.message.EduChatMsg
 import io.agora.education.api.message.EduMsg
+import io.agora.education.api.message.EduPeerChatMsg
 import io.agora.education.api.room.EduRoom
 import io.agora.education.api.room.data.EduRoomChangeType
 import io.agora.education.api.stream.data.EduStreamEvent
 import io.agora.education.api.user.EduUser
-import io.agora.education.api.user.data.EduUserEvent
-import io.agora.education.api.user.data.EduUserInfo
-import io.agora.education.api.user.data.EduUserLeftType
-import io.agora.education.api.user.data.EduUserStateChangeType
+import io.agora.education.api.user.data.*
 
 internal class CMDCallbackManager {
 
@@ -20,8 +18,9 @@ internal class CMDCallbackManager {
         classRoom.eventListener?.onRoomStatusChanged(eventEdu, operatorUser, classRoom)
     }
 
-    fun onRoomPropertyChanged(classRoom: EduRoom, cause: MutableMap<String, Any>?) {
-        classRoom.eventListener?.onRoomPropertiesChanged(classRoom, cause)
+    fun onRoomPropertyChanged(changedProperties: MutableMap<String, Any>, classRoom: EduRoom,
+                              cause: MutableMap<String, Any>?, operator: EduBaseUserInfo?) {
+        classRoom.eventListener?.onRoomPropertiesChanged(changedProperties, classRoom, cause, operator)
     }
 
     fun onRoomChatMessageReceived(chatMsg: EduChatMsg, classRoom: EduRoom) {
@@ -58,8 +57,11 @@ internal class CMDCallbackManager {
         classRoom.eventListener?.onRemoteUserUpdated(userEvent, type, classRoom)
     }
 
-    fun onRemoteUserPropertiesUpdated(classRoom: EduRoom, userInfo: EduUserInfo, cause: MutableMap<String, Any>?) {
-        classRoom.eventListener?.onRemoteUserPropertiesChanged(classRoom, userInfo, cause)
+    fun onRemoteUserPropertiesUpdated(changedProperties: MutableMap<String, Any>, classRoom: EduRoom,
+                                      userInfo: EduUserInfo, cause: MutableMap<String, Any>?,
+                                      operator: EduBaseUserInfo?) {
+        classRoom.eventListener?.onRemoteUserPropertiesChanged(changedProperties, classRoom,
+                userInfo, cause, operator)
     }
 
     fun onLocalUserAdded(userInfo: EduUserInfo, eduUser: EduUser) {
@@ -79,8 +81,10 @@ internal class CMDCallbackManager {
         eduUser.eventListener?.onLocalUserLeft(userEvent, if (type == 1) EduUserLeftType.Normal else EduUserLeftType.KickOff)
     }
 
-    fun onLocalUserPropertiesUpdated(cause: MutableMap<String, Any>?, user: EduUser) {
-        user.eventListener?.onLocalUserPropertiesChanged(user.userInfo, cause)
+    fun onLocalUserPropertiesUpdated(changedProperties: MutableMap<String, Any>,
+                                     cause: MutableMap<String, Any>?, user: EduUser,
+                                     operator: EduBaseUserInfo?) {
+        user.eventListener?.onLocalUserPropertiesChanged(changedProperties, user.userInfo, cause, operator)
     }
 
     fun onLocalStreamAdded(streamEvent: EduStreamEvent, eduUser: EduUser) {
@@ -95,8 +99,7 @@ internal class CMDCallbackManager {
         eduUser.eventListener?.onLocalStreamRemoved(streamEvent)
     }
 
-
-    fun onUserChatMessageReceived(chatMsg: EduChatMsg, listener: EduManagerEventListener?) {
+    fun onUserChatMessageReceived(chatMsg: EduPeerChatMsg, listener: EduManagerEventListener?) {
         listener?.onUserChatMessageReceived(chatMsg)
     }
 

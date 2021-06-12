@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.SurfaceView
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import androidx.core.view.children
 import com.google.gson.Gson
 import io.agora.education.impl.Constants.Companion.APPID
 import io.agora.education.impl.Constants.Companion.AgoraLog
@@ -41,13 +42,17 @@ import io.agora.education.impl.user.data.request.*
 import io.agora.education.impl.user.network.UserService
 import io.agora.education.impl.util.Convert
 import io.agora.education.impl.util.Convert.convertFromUserInfo
+import io.agora.rtc.Constants
 import io.agora.rtc.Constants.CLIENT_ROLE_AUDIENCE
 import io.agora.rtc.Constants.CLIENT_ROLE_BROADCASTER
 import io.agora.rtc.RtcEngine
+import io.agora.rtc.models.ClientRoleOptions
 import io.agora.rtc.video.VideoCanvas
 import io.agora.rte.RteEngineImpl
 import io.agora.rte.RteEngineImpl.OK
 import io.agora.rte.RteEngineImpl.getError
+import io.agora.rte.data.RteAudienceLatencyLevel
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 internal open class EduUserImpl(
@@ -61,9 +66,19 @@ internal open class EduUserImpl(
 
     lateinit var eduRoom: EduRoomImpl
 
-    private val surfaceViewList = mutableListOf<SurfaceView>()
+    @Volatile
+    var lastMicState: Boolean = true
+
+    @Volatile
+    var lastVideoState: Boolean = true
+
+    private val surfaceViewList = Collections.synchronizedList(mutableListOf<SurfaceView>())
 
     final override var cachedRemoteVideoStates: MutableMap<String, Int> = ConcurrentHashMap()
+
+    final override var cachedRemoteAudioStates: MutableMap<String, Int> = ConcurrentHashMap()
+
+    final override var cacheRemoteOnlineUids: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     override fun initOrUpdateLocalStream(options: LocalStreamInitOptions, callback: EduCallback<EduStreamInfo>) {
         if (TextUtils.isEmpty(options.streamUuid)) {
@@ -82,12 +97,27 @@ internal open class EduUserImpl(
             callback.onFailure(mediaError(b, getError(b)))
             return
         }
-        /**enableCamera和enableMicrophone控制是否打开摄像头和麦克风*/
-        val c = RteEngineImpl.enableLocalMedia(options.enableMicrophone, options.enableCamera)
-        if (c != OK()) {
-            callback.onFailure(mediaError(c, getError(c)))
-            return
+        /**enableCamera和enableMicrophone控制是否打开摄像头和麦克风的采集*/
+
+        if (options.enableMicrophone != lastMicState) {
+            val c1 = RteEngineImpl.enableLocalAudio(options.enableMicrophone)
+
+            if (c1 != OK()) {
+                callback.onFailure(mediaError(c1, getError(c1)))
+                return
+            }
         }
+
+        lastMicState = options.enableMicrophone
+
+        if (options.enableCamera != lastVideoState) {
+            val c2 = RteEngineImpl.enableLocalVideo(options.enableCamera)
+            if (c2 != OK()) {
+                callback.onFailure(mediaError(c2, getError(c2)))
+                return
+            }
+        }
+        lastVideoState = options.enableCamera
 
         /**根据当前配置生成一个流信息*/
         val streamInfo = EduStreamInfoImpl(options.streamUuid, options.streamName, VideoSourceType.CAMERA,
@@ -183,6 +213,21 @@ internal open class EduUserImpl(
                 }))
     }
 
+    private fun muteLocal(oldStream: EduStreamInfo, stream: EduStreamInfo): Int {
+
+        if (oldStream.hasAudio != stream.hasAudio && oldStream.hasVideo != stream.hasVideo) {
+            val code0 = RteEngineImpl.muteLocalAudioStream(!stream.hasAudio)
+            val code1 = RteEngineImpl.muteLocalVideoStream(!stream.hasVideo)
+            return if (code0 == Constants.ERR_OK && code1 == Constants.ERR_OK) Constants.ERR_OK else -1
+        } else if (oldStream.hasAudio != stream.hasAudio && oldStream.hasVideo == stream.hasVideo) {
+            val code0 = RteEngineImpl.muteLocalAudioStream(!stream.hasAudio)
+            return if (code0 == Constants.ERR_OK) Constants.ERR_OK else -1
+        } else {
+            val code1 = RteEngineImpl.muteLocalVideoStream(!stream.hasVideo)
+            return if (code1 == Constants.ERR_OK) Constants.ERR_OK else -1
+        }
+    }
+
     override fun muteStream(stream: EduStreamInfo, callback: EduCallback<Boolean>) {
         if (TextUtils.isEmpty(stream.streamUuid)) {
             callback.onFailure(parameterError("streamUuid"))
@@ -203,7 +248,7 @@ internal open class EduUserImpl(
                     callback.onFailure(mediaError(a, getError(a)))
                     return
                 }
-                val b = RteEngineImpl.muteLocalStream(!stream.hasAudio, !stream.hasVideo)
+                val b = muteLocal(oldStream, stream)
                 if (b != OK()) {
                     callback.onFailure(mediaError(b, getError(b)))
                     return
@@ -256,7 +301,9 @@ internal open class EduUserImpl(
                 .enqueue(RetrofitManager.Callback(0, object : ThrowableCallback<ResponseBody<String>> {
                     override fun onSuccess(res: ResponseBody<String>?) {
                         /**设置角色*/
-                        val a = RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(), CLIENT_ROLE_AUDIENCE)
+                        val options = ClientRoleOptions()
+                        options.audienceLatencyLevel = RteAudienceLatencyLevel.LOW.value
+                        val a = RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(), CLIENT_ROLE_AUDIENCE, options)
                         if (a != OK()) {
                             callback.onFailure(mediaError(a, getError(a)))
                             return
@@ -449,12 +496,18 @@ internal open class EduUserImpl(
                 val surfaceView = iterable.next()
                 if (stream.streamUuid == surfaceView.tag && surfaceView.parent != null) {
                     (surfaceView.parent as ViewGroup).removeView(surfaceView)
+                    iterable.remove()
                 }
-                iterable.remove()
             }
         } else {
-            checkAndRemoveSurfaceView(stream.streamUuid)?.let {
-                viewGroup.removeView(it)
+            checkAndRemoveSurfaceView(stream.streamUuid)?.let { surfaceView ->
+                val tmp = viewGroup.children.distinct().find { it.tag == surfaceView.tag }
+                if (tmp == null) {
+                    // this viewGroup is not it`s parent
+                    removeFromParent(surfaceView)
+                } else {
+                    viewGroup.removeView(surfaceView)
+                }
             }
             val appContext = viewGroup.context.applicationContext
             val surfaceView = RtcEngine.CreateRendererView(appContext)
@@ -496,18 +549,7 @@ internal open class EduUserImpl(
         AgoraLog.w("$TAG->Clear all SurfaceView")
         if (surfaceViewList.size > 0) {
             surfaceViewList.forEach {
-                val parent = it.parent
-                if (parent != null && parent is ViewGroup) {
-                    val context = parent.context
-                    if (context != null && context is Activity && !context.isFinishing &&
-                            !context.isDestroyed) {
-                        context.runOnUiThread(object : Runnable {
-                            override fun run() {
-                                parent.removeView(it)
-                            }
-                        })
-                    }
-                }
+                removeFromParent(it)
             }
         }
     }
@@ -520,6 +562,17 @@ internal open class EduUserImpl(
             }
         }
         return null
+    }
+
+    private fun removeFromParent(surfaceView: SurfaceView) {
+        val parent = surfaceView.parent
+        if (parent != null && parent is ViewGroup) {
+            val context = parent.context
+            if (context != null && context is Activity && !context.isFinishing &&
+                    !context.isDestroyed) {
+                context.runOnUiThread(Runnable { parent.removeView(surfaceView) })
+            }
+        }
     }
 
     override fun setRoomProperties(properties: MutableMap<String, Any>,

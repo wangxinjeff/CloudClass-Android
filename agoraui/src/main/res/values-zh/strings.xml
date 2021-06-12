@@ -11,6 +11,7 @@
     <string name="agora_board_preload_failed_view_close">关闭</string>
     <string name="agora_board_preload_failed_view_retry">重新加载</string>
     <string name="agora_board_loading">加载中...</string>
+    <string name="agora_board_reconnect">重连中...</string>
 
     <!--  Toast  -->
     <string name="agora_toast_board_permission_true">你可以使用白板了</string>
@@ -18,6 +19,7 @@
 
     <!--  Dialog  -->
     <string name="agora_dialog_end_class_confirm_title">下课确认</string>
+    <string name="agora_dialog_sent_log_success">日志发送成功！</string>
     <string name="agora_dialog_end_class_confirm_message">你确定要下课吗？</string>
     <string name="agora_dialog_kicked_title">禁入通知</string>
     <string name="agora_dialog_kicked_message">你已被踢出教室</string>
@@ -35,12 +37,19 @@
     <string name="agora_setting_leave">退出教室</string>
 
     <!-- Message -->
-    <string name="agora_message_title">消息</string>
+    <string name="agora_chat_tab_message">消息</string>
+    <string name="agora_chat_tab_private">提问</string>
     <string name="agora_message_none_text">还没有消息</string>
     <string name="agora_message_send">发送</string>
     <string name="agora_message_input_hint">请输入消息</string>
     <string name="agora_message_student_chat_mute_tips">已开启学生禁言</string>
-    <string name="agora_message_student_chat_mute_hint">禁言</string>
+    <string name="agora_message_student_chat_mute_hint">禁言中</string>
+    <string name="agora_message_item_role_assistant">助教</string>
+
+    <string name="agora_message_chat_student_ban_local">你被%s禁言了</string>
+    <string name="agora_message_chat_student_ban_remote">%s被%s禁言了</string>
+    <string name="agora_message_chat_student_allow_local">你被%s解除了禁言</string>
+    <string name="agora_message_chat_student_allow_remote">%s被%s解除了禁言</string>
 
     <!-- UserList -->
     <string name="agora_userlist_dialog_title">人员列表</string>
@@ -50,10 +59,14 @@
     <string name="agora_userlist_table_title_access">授权</string>
     <string name="agora_userlist_table_title_camera">摄像头</string>
     <string name="agora_userlist_table_title_mic">麦克风</string>
+    <string name="agora_userlist_table_title_silence">禁言</string>
     <string name="agora_userlist_table_title_reward">奖励</string>
 
     <!-- Room Status -->
     <string name="agora_room_state_not_started">距离上课还有:&#160;&#160;</string>
     <string name="agora_room_state_started">已开始上课:&#160;&#160;</string>
     <string name="agora_room_state_end">课程已结束</string>
+
+    <!-- Room Status -->
+    <string name="agora_video_large_tip">以\"最大化\"模式直播</string>
 </resources>

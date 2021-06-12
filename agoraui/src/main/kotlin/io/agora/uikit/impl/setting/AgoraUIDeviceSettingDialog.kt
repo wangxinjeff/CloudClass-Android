@@ -9,22 +9,54 @@ import android.view.*
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
+import io.agora.educontext.EduContextCameraFacing
+import io.agora.educontext.EduContextDeviceConfig
+import io.agora.educontext.EduContextPool
 import io.agora.uikit.R
+import io.agora.uikit.educontext.handlers.DeViceHandler
 import io.agora.uikit.impl.container.AbsUIContainer
 import io.agora.uikit.interfaces.listeners.IAgoraUIDeviceListener
+import io.agora.uikit.util.AppUtil
 
 @SuppressLint("InflateParams")
 class AgoraUIDeviceSettingDialog(context: Context, anchor: View,
-                                 private val dismissListener: DialogInterface.OnDismissListener,
                                  exitClickHandler: Runnable,
-                                 container: AbsUIContainer?,
-                                 private val deviceListener: IAgoraUIDeviceListener?) : Dialog(context, R.style.agora_dialog) {
-    private val facingFront: AppCompatTextView
-    private val facingBack: AppCompatTextView
+                                 private val eduContext: EduContextPool?) : Dialog(context, R.style.agora_dialog) {
+    private val TAG = "AgoraUIDeviceSettingDia"
+
+    private val clickInterval = 500L
+    private val layout = LayoutInflater.from(context).inflate(R.layout.agora_status_bar_setting_dialog_layout,
+            null, false)
+    private val cameraSwitch: AppCompatImageView = layout.findViewById(R.id.agora_setting_camera_switch)
+    private val micSwitch: AppCompatImageView = layout.findViewById(R.id.agora_setting_mic_switch)
+    private val speakerSwitch: AppCompatImageView = layout.findViewById(R.id.agora_setting_loudspeaker_switch)
+    private val facingFront: AppCompatTextView = layout.findViewById(R.id.agora_setting_camera_front)
+    private val facingBack: AppCompatTextView = layout.findViewById(R.id.agora_setting_camera_back)
+
+    private val eventHandler = object : DeViceHandler() {
+        override fun onCameraDeviceEnableChanged(enabled: Boolean) {
+            super.onCameraDeviceEnableChanged(enabled)
+            cameraSwitch.isActivated = enabled
+        }
+
+        override fun onCameraFacingChanged(facing: EduContextCameraFacing) {
+            super.onCameraFacingChanged(facing)
+            facingFront.isActivated = facing == EduContextCameraFacing.Front
+            facingBack.isActivated = facing == EduContextCameraFacing.Back
+        }
+
+        override fun onMicDeviceEnabledChanged(enabled: Boolean) {
+            super.onMicDeviceEnabledChanged(enabled)
+            micSwitch.isActivated = enabled
+        }
+
+        override fun onSpeakerEnabledChanged(enabled: Boolean) {
+            super.onSpeakerEnabledChanged(enabled)
+            speakerSwitch.isActivated = enabled
+        }
+    }
 
     init {
-        val layout = LayoutInflater.from(context).inflate(
-                R.layout.agora_status_bar_setting_dialog_layout, null, false)
         setContentView(layout)
         val content = layout.findViewById<LinearLayout>(R.id.agora_setting_dialog_layout)
         content.elevation = 10f
@@ -32,66 +64,62 @@ class AgoraUIDeviceSettingDialog(context: Context, anchor: View,
 
         hideStatusBar(window!!)
         adjustPosition(anchor,
-            content.resources.getDimensionPixelSize(R.dimen.agora_setting_dialog_width),
-            content.resources.getDimensionPixelSize(R.dimen.agora_setting_dialog_height))
+                content.resources.getDimensionPixelSize(R.dimen.agora_setting_dialog_width),
+                content.resources.getDimensionPixelSize(R.dimen.agora_setting_dialog_height))
 
-        val config = container?.deviceConfig
+        val config = eduContext?.deviceContext()?.getDeviceConfig() ?: EduContextDeviceConfig()
         layout.findViewById<AppCompatTextView>(R.id.agora_setting_exit_button).setOnClickListener {
             exitClickHandler.run()
+            dismiss()
         }
 
-        val cameraSwitch = layout.findViewById<AppCompatImageView>(R.id.agora_setting_camera_switch)
-        cameraSwitch.isActivated = config?.cameraEnabled ?: false
+        cameraSwitch.isActivated = config.cameraEnabled ?: false
         cameraSwitch.setOnClickListener {
-            it.isActivated = !it.isActivated
-            deviceListener?.onCameraEnabled(it.isActivated)
+            if (AppUtil.isFastClick(clickInterval)) {
+                return@setOnClickListener
+            }
+            eduContext?.deviceContext()?.setCameraDeviceEnable(!cameraSwitch.isActivated)
         }
 
-        facingFront = layout.findViewById(R.id.agora_setting_camera_front)
-        facingBack = layout.findViewById(R.id.agora_setting_camera_back)
-        facingFront.isActivated = config?.cameraFront ?: false
-        facingBack.isActivated = !(config?.cameraFront ?: true)
+        facingFront.isActivated = config.cameraFacing == EduContextCameraFacing.Front
+        facingBack.isActivated = config.cameraFacing == EduContextCameraFacing.Back
 
         facingFront.setOnClickListener {
-            if (config?.cameraFront == false) {
-                config.cameraFront = true
-                deviceListener?.onCameraFacingChanged(config.cameraFront)
+            if (AppUtil.isFastClick(clickInterval)) {
+                return@setOnClickListener
             }
-
-            facingFront.isActivated = config?.cameraFront ?: false
-            facingBack.isActivated = !(config?.cameraFront ?: true)
+            eduContext?.deviceContext()?.switchCameraFacing()
         }
 
         facingBack.setOnClickListener {
-            if (config?.cameraFront == true) {
-                config.cameraFront = false
-                deviceListener?.onCameraFacingChanged(config.cameraFront)
+            if (AppUtil.isFastClick(clickInterval)) {
+                return@setOnClickListener
             }
-
-            facingFront.isActivated = config?.cameraFront ?: false
-            facingBack.isActivated = !(config?.cameraFront ?: true)
+            eduContext?.deviceContext()?.switchCameraFacing()
         }
 
-        val micSwitch = layout.findViewById<AppCompatImageView>(R.id.agora_setting_mic_switch)
-        micSwitch.isActivated = config?.micEnabled ?: false
+        micSwitch.isActivated = config.micEnabled ?: false
         micSwitch.setOnClickListener {
-            it.isActivated = !it.isActivated
-            deviceListener?.onMicEnabled(it.isActivated)
+            if (AppUtil.isFastClick(clickInterval)) {
+                return@setOnClickListener
+            }
+            eduContext?.deviceContext()?.setMicDeviceEnable(!micSwitch.isActivated)
         }
 
-        val speakerSwitch = layout.findViewById<AppCompatImageView>(R.id.agora_setting_loudspeaker_switch)
-        speakerSwitch.isActivated = config?.speakerEnabled ?: false
+        speakerSwitch.isActivated = config.speakerEnabled ?: false
         speakerSwitch.setOnClickListener {
-            it.isActivated = !it.isActivated
-            deviceListener?.onSpeakerEnabled(it.isActivated)
+            if (AppUtil.isFastClick(clickInterval)) {
+                return@setOnClickListener
+            }
+            eduContext?.deviceContext()?.setSpeakerEnable(!speakerSwitch.isActivated)
         }
+
+        eduContext?.deviceContext()?.addHandler(eventHandler)
     }
 
     override fun show() {
         setCanceledOnTouchOutside(true)
         setCancelable(true)
-        setOnDismissListener(dismissListener)
-
         super.show()
     }
 
@@ -114,8 +142,8 @@ class AgoraUIDeviceSettingDialog(context: Context, anchor: View,
 
         val locationsOnScreen = IntArray(2)
         anchor.getLocationOnScreen(locationsOnScreen)
-        params.x = 10
-        params.y = locationsOnScreen[1] + anchor.height
+        params.x = anchor.left - locationsOnScreen[0]
+        params.y = locationsOnScreen[1] + anchor.height + context.resources.getDimensionPixelSize(R.dimen.stroke_small) * 2
         window.attributes = params
     }
 }

@@ -301,8 +301,9 @@ class MainActivity2 : AppCompatActivity(), View.OnClickListener {
             /**默认开始时间是当前时间点；默认持续310秒*/
             val startTime = System.currentTimeMillis()
             var duration = 1800L
-            val agoraEduLaunchConfig = AgoraEduLaunchConfig(userName, userUuid, roomName,
-                    roomUuid, roleType, roomType, rtmToken, startTime, duration, roomRegion)
+            val agoraEduLaunchConfig = AgoraEduLaunchConfig(userName, userUuid, roomName, roomUuid,
+                    roleType, roomType, rtmToken, startTime, duration, roomRegion, null,
+                    null)
             runOnUiThread {
                 try {
                     val classRoom = AgoraEduSDK.launch(this,

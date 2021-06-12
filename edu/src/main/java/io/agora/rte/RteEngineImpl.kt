@@ -3,10 +3,10 @@ package io.agora.rte
 import android.content.Context
 import android.util.Log
 import io.agora.report.ReportManager
-import io.agora.rtc.Constants.CHANNEL_PROFILE_LIVE_BROADCASTING
-import io.agora.rtc.Constants.ERR_OK
+import io.agora.rtc.Constants.*
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcEngine
+import io.agora.rtc.models.ClientRoleOptions
 import io.agora.rtc.video.VideoCanvas
 import io.agora.rtc.video.VideoEncoderConfiguration
 import io.agora.rte.data.*
@@ -92,6 +92,7 @@ object RteEngineImpl : IRteEngine {
 
         override fun onAudioRouteChanged(routing: Int) {
             super.onAudioRouteChanged(routing)
+            Log.i(tag, "onAudioRouteChanged->routing->$routing")
             mediaDeviceListener?.onAudioRouteChanged(routing)
         }
 
@@ -134,14 +135,21 @@ object RteEngineImpl : IRteEngine {
 
         override fun onLocalVideoStateChanged(localVideoState: Int, error: Int) {
             super.onLocalVideoStateChanged(localVideoState, error)
+            val state = RteLocalVideoState.convert(localVideoState)
+            val err = RteLocalVideoError.convert(error)
             rteChannelEventListenerMap.forEach {
-                val state = RteLocalVideoState.convert(localVideoState)
-                val err = RteLocalVideoError.convert(error)
                 it.value.onLocalVideoStateChanged(state, err)
             }
         }
 
-
+        override fun onLocalAudioStateChanged(localAudioState: Int, error: Int) {
+            super.onLocalAudioStateChanged(localAudioState, error)
+            val state = RteLocalAudioState.convert(localAudioState)
+            val err = RteLocalAudioError.convert(error)
+            rteChannelEventListenerMap.forEach {
+                it.value.onLocalAudioStateChanged(state, err)
+            }
+        }
     }
 
     override fun init(context: Context, appId: String, logFileDir: String) {
@@ -158,6 +166,10 @@ object RteEngineImpl : IRteEngine {
         rtcEngine.setParameters("\"rtc.report_app_scenario\": {\"appScenario\":0, \"serviceType\":0, \"appVersion\":\"1.1.0-offiicial\"}")
         rtcEngine.setParameters("{\"che.video.h264ProfileNegotiated\": 66}")
         rtcEngine.setParameters("{\"che.video.web_h264_interop_enable\": true}")
+    }
+
+    override fun setRtcParameters(parameters: String): Int {
+        return rtcEngine.setParameters(parameters)
     }
 
     override fun loginRtm(rtmUid: String, rtmToken: String, callback: RteCallback<Unit>) {
@@ -205,6 +217,22 @@ object RteEngineImpl : IRteEngine {
         return rteChannel
     }
 
+    override fun getRtcCallId(id: String): String {
+        return channelMap[id]?.getRtcCallId() ?: ""
+    }
+
+    override fun getRtmSessionId(id: String): String {
+        return channelMap[id]?.getRtmSessionId() ?: ""
+    }
+
+    override fun setRemoteRenderMode(channelId: String, uid: Int, mode: Int): Int {
+        if (channelMap.isNotEmpty()) {
+            return (channelMap[channelId] as RteChannelImpl).rtcChannel.setRemoteRenderMode(uid,
+                    mode, VIDEO_MIRROR_MODE_AUTO)
+        }
+        return -1
+    }
+
     override fun enableLocalMedia(audio: Boolean, video: Boolean): Int {
         val a = rtcEngine.enableLocalAudio(audio)
         if (a != ERR_OK) {
@@ -226,6 +254,18 @@ object RteEngineImpl : IRteEngine {
             val code = (channelMap[channelId] as RteChannelImpl).rtcChannel.setClientRole(role)
             if (code == 0) {
                 Log.e(tag, "set client role success to:$role")
+            }
+            return code
+        }
+        return -1
+    }
+
+    override fun setClientRole(channelId: String, role: Int, options: ClientRoleOptions): Int {
+        if (channelMap.isNotEmpty()) {
+            val code = (channelMap[channelId] as RteChannelImpl).rtcChannel.setClientRole(role, options)
+            if (code == 0) {
+                Log.e(tag, "set client role success to:$role, " +
+                        "audienceLatencyLevel:${options.audienceLatencyLevel}")
             }
             return code
         }
@@ -266,6 +306,33 @@ object RteEngineImpl : IRteEngine {
         return ERR_OK
     }
 
+    override fun updateLocalAudioStream(hasAudio: Boolean): Int {
+        val a = rtcEngine.enableLocalAudio(hasAudio)
+        if (a != ERR_OK) {
+            return a
+        }
+
+        val c = rtcEngine.muteLocalAudioStream(!hasAudio)
+        if (c != ERR_OK) {
+            return c
+        }
+        return ERR_OK
+    }
+
+    override fun updateLocalVideoStream(hasVideo: Boolean): Int {
+
+        val b = rtcEngine.enableLocalVideo(hasVideo)
+        if (b != ERR_OK) {
+            return b
+        }
+
+        val d = rtcEngine.muteLocalVideoStream(!hasVideo)
+        if (d != ERR_OK) {
+            return d
+        }
+        return ERR_OK
+    }
+
     override fun muteRemoteStream(channelId: String, uid: Int, muteAudio: Boolean, muteVideo: Boolean): Int {
         if (channelMap.isNotEmpty()) {
             val channel = (channelMap[channelId] as RteChannelImpl).rtcChannel
@@ -282,6 +349,14 @@ object RteEngineImpl : IRteEngine {
         return if (code0 == ERR_OK && code1 == ERR_OK) ERR_OK else -1
     }
 
+    override fun muteLocalAudioStream(muteAudio: Boolean): Int {
+        return rtcEngine.muteLocalAudioStream(muteAudio)
+    }
+
+    override fun muteLocalVideoStream(muteVideo: Boolean): Int {
+        return rtcEngine.muteLocalVideoStream(muteVideo)
+    }
+
     override fun setVideoEncoderConfiguration(config: VideoEncoderConfiguration): Int {
         return rtcEngine.setVideoEncoderConfiguration(config)
     }
@@ -294,6 +369,22 @@ object RteEngineImpl : IRteEngine {
         return rtcEngine.enableAudio()
     }
 
+    override fun disableVideo(): Int {
+        return rtcEngine.disableVideo()
+    }
+
+    override fun disableAudio(): Int {
+        return rtcEngine.disableAudio()
+    }
+
+    override fun enableLocalVideo(enabled: Boolean): Int {
+        return rtcEngine.enableLocalVideo(enabled)
+    }
+
+    override fun enableLocalAudio(enabled: Boolean): Int {
+        return rtcEngine.enableLocalAudio(enabled)
+    }
+
     override fun switchCamera(): Int {
         return rtcEngine.switchCamera()
     }
@@ -304,6 +395,14 @@ object RteEngineImpl : IRteEngine {
 
     override fun setupRemoteVideo(local: VideoCanvas): Int {
         return rtcEngine.setupRemoteVideo(local)
+    }
+
+    override fun setEnableSpeakerphone(enabled: Boolean): Int {
+        return rtcEngine.setEnableSpeakerphone(enabled)
+    }
+
+    override fun isSpeakerphoneEnabled(): Boolean {
+        return rtcEngine.isSpeakerphoneEnabled
     }
 
     override fun startAudioMixing(filePath: String, loopback: Boolean, replace: Boolean, cycle: Int): Int {

@@ -1,6 +1,7 @@
 package io.agora.uikit.impl.tool
 
 import android.content.Context
+import android.content.DialogInterface
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Rect
@@ -46,11 +47,23 @@ class AgoraUIToolBar(context: Context,
     private val toolAdapter: AgoraUIToolItemAdapter
     private val recycler: RecyclerView
     private val unfoldButton: AppCompatImageView
+    private val foldButton: AppCompatImageView
 
     private var extAppDialog: AgoraUIExtensionDialog? = null
 
     private val config = AgoraUIDrawingConfig()
-    var optionSelected = 0
+    private var optionSelected = 0
+
+    // 只记录点击toolBax  roster时上一次选中的item(因为只有这俩的dialog消失时才需要恢复上一次选中的item)
+    private var lastOptionSelected = optionSelected
+    private var whiteBoardEnabled = false
+
+    // only for roster dismiss
+    val rosterDismissListener = DialogInterface.OnDismissListener {
+        // restore selectedStatus
+        notifyOptionSelected()
+        setConfig(this.config)
+    }
 
     private var toolBarType = AgoraUIToolType.Whiteboard
     private var toolBarItems = AgoraUIToolItemList.getWhiteboardList()
@@ -94,12 +107,13 @@ class AgoraUIToolBar(context: Context,
         )
 
         unfoldButton = unfoldLayout.findViewById(R.id.agora_tool_switch)
+        foldButton = foldLayout.findViewById(R.id.agora_tool_switch)
 
         foldLayout.findViewById<ImageView>(R.id.agora_tool_switch).setOnClickListener {
-            foldLayout.isClickable = false
+            foldButton.isClickable = false
             unfoldButton.isClickable = false
-            foldLayout.postDelayed({
-                foldLayout.isClickable = true
+            it.postDelayed({
+                foldButton.isClickable = true
                 unfoldButton.isClickable = true
             }, duration * 2)
             foldLayout.animate().setDuration(duration)
@@ -135,10 +149,10 @@ class AgoraUIToolBar(context: Context,
         )
 
         unfoldButton.setOnClickListener {
-            foldLayout.isClickable = false
+            foldButton.isClickable = false
             unfoldButton.isClickable = false
-            foldLayout.postDelayed({
-                foldLayout.isClickable = true
+            it.postDelayed({
+                foldButton.isClickable = true
                 unfoldButton.isClickable = true
             }, duration * 2)
             unfoldLayout.animate().setDuration(duration)
@@ -216,7 +230,39 @@ class AgoraUIToolBar(context: Context,
         toolAdapter.notifyDataSetChanged()
     }
 
+    private fun notifyOptionSelected() {
+        if (whiteBoardEnabled) {
+            optionSelected = lastOptionSelected
+            if (optionSelected == -1) {
+                val itemType = toAgoraUIToolItemType(config.activeAppliance)
+                val items = if (!whiteBoardEnabled) {
+                    if (toolBarType == AgoraUIToolType.All) {
+                        AgoraUIToolItemList.getRosterOnlyList()
+                    } else {
+                        AgoraUIToolItemList.emptyList
+                    }
+                } else {
+                    when (toolBarType) {
+                        AgoraUIToolType.All -> AgoraUIToolItemList.getAllItemList()
+                        AgoraUIToolType.Whiteboard -> AgoraUIToolItemList.getWhiteboardList()
+                    }
+                }
+                items.forEachIndexed { index, item ->
+                    if (item.type == itemType) {
+                        optionSelected = index
+                        return
+                    }
+                }
+                optionSelected = 0
+            }
+        } else {
+            optionSelected = -1
+        }
+    }
+
     fun setWhiteboardFunctionEnabled(enabled: Boolean) {
+        this.whiteBoardEnabled = enabled
+        notifyOptionSelected()
         recycler.post {
             toolBarItems = if (!enabled) {
                 if (toolBarType == AgoraUIToolType.All) {
@@ -253,9 +299,11 @@ class AgoraUIToolBar(context: Context,
         }
     }
 
-    private fun setSelfVisibility(visible: Boolean) {
-        foldLayout.visibility = if (visible) VISIBLE else GONE
-        unfoldLayout.visibility = if (visible) VISIBLE else GONE
+    fun setSelfVisibility(visible: Boolean) {
+        foldLayout.post {
+            foldLayout.visibility = if (visible) VISIBLE else GONE
+            unfoldLayout.visibility = if (visible) VISIBLE else GONE
+        }
     }
 
     private class AgoraUIToolUnfoldViewOutline : ViewOutlineProvider() {
@@ -337,9 +385,10 @@ class AgoraUIToolBar(context: Context,
 
             holder.itemView.isActivated = (pos == optionSelected)
             holder.itemView.setOnClickListener {
+                val tmp = optionSelected
                 optionSelected = pos
                 toolAdapter.notifyDataSetChanged()
-                handleClick(holder.itemView, toolBarItems[pos])
+                handleClick(holder.itemView, pos, tmp)
             }
         }
 
@@ -347,7 +396,10 @@ class AgoraUIToolBar(context: Context,
             return toolBarItems.size
         }
 
-        private fun handleClick(view: View, item: AgoraUIToolItem) {
+        private fun handleClick(view: View, newPos: Int, oldPos: Int) {
+            // only toolBox/roster dismiss, need restore itemSelectedStatus
+            lastOptionSelected = newPos
+            val item: AgoraUIToolItem = toolBarItems[newPos]
             when (item.type) {
                 AgoraUIToolItemType.Select -> {
                     config.activeAppliance = AgoraUIApplianceType.Select
@@ -367,6 +419,16 @@ class AgoraUIToolBar(context: Context,
                             this@AgoraUIToolBar, config).show(view)
                 }
 
+                AgoraUIToolItemType.Color -> {
+                    AgoraUIToolDialog(view.context, item.type,
+                            this@AgoraUIToolBar, config).show(view)
+                }
+
+                AgoraUIToolItemType.Clicker -> {
+                    config.activeAppliance = AgoraUIApplianceType.Clicker
+                    eduContext?.whiteboardContext()?.selectAppliance(WhiteboardApplianceType.Clicker)
+                }
+
                 AgoraUIToolItemType.Text -> {
                     eduContext?.whiteboardContext()?.selectAppliance(WhiteboardApplianceType.Text)
                     AgoraUIToolDialog(view.context, item.type,
@@ -378,32 +440,35 @@ class AgoraUIToolBar(context: Context,
                     eduContext?.whiteboardContext()?.selectAppliance(WhiteboardApplianceType.Eraser)
                 }
 
-                AgoraUIToolItemType.Color -> {
-                    AgoraUIToolDialog(view.context, item.type,
-                            this@AgoraUIToolBar, config).show(view)
-                }
-
                 AgoraUIToolItemType.Roster -> {
+                    // record old optionSelected, for restore selectedStatus
+                    lastOptionSelected = oldPos
                     eduContext?.whiteboardContext()?.selectRoster(view)
                 }
 
                 AgoraUIToolItemType.Toolbox -> {
+                    // record old optionSelected, for restore selectedStatus
+                    lastOptionSelected = oldPos
                     eduContext?.extAppContext()?.let {
                         extAppDialog = AgoraUIExtensionDialog(view.context, it,
-                            object : AgoraUIToolExtAppListener {
-                                override fun onExtAppClicked(view: View, identifier: String) {
-                                    val result = it.launchExtApp(identifier)
-                                    Log.i(tag, "launch ext app $identifier result $result")
-                                    extAppDialog?.let { dialog ->
-                                        if (dialog.isShowing) {
-                                            dialog.dismiss()
+                                object : AgoraUIToolExtAppListener {
+                                    override fun onExtAppClicked(view: View, identifier: String) {
+                                        val result = it.launchExtApp(identifier)
+                                        Log.i(tag, "launch ext app $identifier result $result")
+                                        extAppDialog?.let { dialog ->
+                                            if (dialog.isShowing) {
+                                                dialog.dismiss()
+                                            }
+
+                                            extAppDialog = null
                                         }
-
-                                        extAppDialog = null
                                     }
-                                }
-                            })
-
+                                })
+                        extAppDialog?.setOnDismissListener {
+                            // restore selectedStatus
+                            notifyOptionSelected()
+                            setConfig(this@AgoraUIToolBar.config)
+                        }
                         extAppDialog?.show(view)
                     }
                 }
@@ -440,6 +505,7 @@ class AgoraUIToolBar(context: Context,
             AgoraUIApplianceType.Pen -> WhiteboardApplianceType.Pen
             AgoraUIApplianceType.Rect -> WhiteboardApplianceType.Rect
             AgoraUIApplianceType.Text -> WhiteboardApplianceType.Text
+            AgoraUIApplianceType.Clicker -> WhiteboardApplianceType.Clicker
         }
     }
 
@@ -452,6 +518,18 @@ class AgoraUIToolBar(context: Context,
             WhiteboardApplianceType.Pen -> AgoraUIApplianceType.Pen
             WhiteboardApplianceType.Rect -> AgoraUIApplianceType.Rect
             WhiteboardApplianceType.Text -> AgoraUIApplianceType.Text
+            WhiteboardApplianceType.Clicker -> AgoraUIApplianceType.Clicker
+        }
+    }
+
+    private fun toAgoraUIToolItemType(appliance: AgoraUIApplianceType): AgoraUIToolItemType {
+        return when (appliance) {
+            AgoraUIApplianceType.Select -> AgoraUIToolItemType.Select
+            AgoraUIApplianceType.Pen, AgoraUIApplianceType.Rect, AgoraUIApplianceType.Circle,
+            AgoraUIApplianceType.Line -> AgoraUIToolItemType.Pen
+            AgoraUIApplianceType.Text -> AgoraUIToolItemType.Text
+            AgoraUIApplianceType.Eraser -> AgoraUIToolItemType.Eraser
+            AgoraUIApplianceType.Clicker -> AgoraUIToolItemType.Clicker
         }
     }
 

@@ -3,18 +3,18 @@ package io.agora.uikit.impl.users
 import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
+import android.content.DialogInterface
 import android.graphics.Color
 import android.graphics.Rect
 import android.text.SpannableString
 import android.text.style.ImageSpan
+import android.util.Log
 import android.view.*
 import android.widget.CheckedTextView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.*
-import io.agora.educontext.EduContextPool
-import io.agora.educontext.EduContextUserDetailInfo
-import io.agora.educontext.EduContextUserRole
+import io.agora.educontext.*
 import io.agora.uikit.R
 import io.agora.uikit.educontext.handlers.UserHandler
 import io.agora.uikit.impl.AbsComponent
@@ -25,6 +25,8 @@ import kotlin.collections.ArrayList
 import kotlin.math.min
 
 class AgoraUIRoster(private val eduContext: EduContextPool?) : AbsComponent() {
+    private val tag = "AgoraUIRoster"
+
     private var rosterDialog: RosterDialog? = null
     private var userList: MutableList<EduContextUserDetailInfo> = mutableListOf()
 
@@ -44,11 +46,21 @@ class AgoraUIRoster(private val eduContext: EduContextPool?) : AbsComponent() {
             }?.let { rosterType ->
                 dismiss()
                 RosterDialog(context, rosterType, eduContext, userList).let { dialog ->
+                    dialog.setOnDismissListener(dismissListener)
                     rosterDialog = dialog
                     showDialog(anchor)
                 }
             }
         }
+
+        override fun onFlexUserPropsChanged(changedProperties: MutableMap<String, Any>, properties: MutableMap<String, Any>, cause: MutableMap<String, Any>?, fromUser: EduContextUserDetailInfo, operator: EduContextUserInfo?) {
+            super.onFlexUserPropsChanged(changedProperties, properties, cause, fromUser, operator)
+            Log.i(tag, "onFlexUserPropertiesChanged")
+        }
+    }
+
+    companion object {
+        var dismissListener: DialogInterface.OnDismissListener? = null
     }
 
     fun sort(list: MutableList<EduContextUserDetailInfo>): MutableList<EduContextUserDetailInfo> {
@@ -138,6 +150,7 @@ class AgoraUIRoster(private val eduContext: EduContextPool?) : AbsComponent() {
 
     private fun dismiss() {
         if (isShowing()) {
+            rosterDialog!!.setOnDismissListener(null)
             rosterDialog!!.dismiss()
             rosterDialog = null
         }
@@ -287,7 +300,7 @@ class RosterDialog(
         list.forEach { item ->
             if (item.user.role == EduContextUserRole.Student) {
                 studentList.add(item)
-            } else if(item.user.role == EduContextUserRole.Teacher) {
+            } else if (item.user.role == EduContextUserRole.Teacher) {
                 updateTeacher(item)
             }
         }
@@ -365,6 +378,7 @@ class RosterDialog(
         private val ctvAccess: CheckedTextView? = view.findViewById(R.id.ctv_access)
         private val ctvCamera: CheckedTextView? = view.findViewById(R.id.ctv_camera)
         private val ctvMic: CheckedTextView? = view.findViewById(R.id.ctv_mic)
+        private val ctvSilence: CheckedTextView? = view.findViewById(R.id.ctv_silence)
         private val ctvStar: CheckedTextView? = view.findViewById(R.id.ctv_star)
 
         override fun bind(item: EduContextUserDetailInfo) {
@@ -373,12 +387,16 @@ class RosterDialog(
             ctvAccess?.isEnabled = item.boardGranted
 
             ctvCamera?.let { camera ->
+                if (item.cameraState == EduContextDeviceState.Closed) {
+                    camera.isEnabled = false
+                    camera.isChecked = false
+                    return@let
+                }
                 if (item.coHost) {
                     camera.isEnabled = item.isSelf
                 } else {
                     camera.isEnabled = false
                 }
-
                 camera.isChecked = item.enableVideo
                 camera.setOnClickListener {
                     camera.isClickable = false
@@ -389,6 +407,11 @@ class RosterDialog(
             }
 
             ctvMic?.let { mic ->
+                if (item.microState == EduContextDeviceState.Closed) {
+                    mic.isEnabled = false
+                    mic.isChecked = false
+                    return@let
+                }
                 if (item.coHost) {
                     mic.isEnabled = item.isSelf
                 } else {
@@ -397,11 +420,14 @@ class RosterDialog(
 
                 mic.isChecked = item.enableAudio
                 mic.setOnClickListener {
+                    mic.isClickable = false
                     mic.isChecked = !mic.isChecked
                     listener.onMicCheckChanged(item, mic.isChecked)
-                    mic.postDelayed({ ctvCamera?.isClickable = true }, clickInterval)
+                    mic.postDelayed({ mic.isClickable = true }, clickInterval)
                 }
             }
+
+            ctvSilence?.isEnabled = item.silence
 
             val tmp = min(item.rewardCount, 99)
             ctvStar?.text = view.resources.getString(R.string.agora_video_reward, tmp)
@@ -415,7 +441,7 @@ class RosterDialog(
 
         override fun bind(item: EduContextUserDetailInfo) {
             tvName?.let { nameTextView ->
-                val nameStr = SpannableString(item.user.userName)
+                val nameStr = SpannableString(item.user.userName.plus(" "))
 
                 if (item.coHost) {
                     nameStr.setSpan(ImageSpan(ContextCompat.getDrawable(view.context,
@@ -432,6 +458,11 @@ class RosterDialog(
             }
 
             ctvCamera?.let { camera ->
+                if (item.cameraState == EduContextDeviceState.Closed) {
+                    camera.isEnabled = false
+                    camera.isChecked = false
+                    return@let
+                }
                 if (item.coHost) {
                     camera.isEnabled = item.isSelf
                 } else {
@@ -448,6 +479,11 @@ class RosterDialog(
             }
 
             ctvMic?.let { mic ->
+                if (item.microState == EduContextDeviceState.Closed) {
+                    mic.isEnabled = false
+                    mic.isChecked = false
+                    return@let
+                }
                 if (item.coHost) {
                     mic.isEnabled = item.isSelf
                 } else {
@@ -456,9 +492,10 @@ class RosterDialog(
 
                 mic.isChecked = item.enableAudio
                 mic.setOnClickListener {
+                    mic.isClickable = false
                     mic.isChecked = !mic.isChecked
                     listener.onMicCheckChanged(item, mic.isChecked)
-                    mic.postDelayed({ ctvCamera?.isClickable = true }, clickInterval)
+                    mic.postDelayed({ mic.isClickable = true }, clickInterval)
                 }
             }
         }

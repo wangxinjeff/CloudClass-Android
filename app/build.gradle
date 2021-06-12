@@ -12,13 +12,13 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion safeExtGet('android', 'compileSdkVersion', '29')
+    compileSdkVersion safeExtGet('android', 'compileSdkVersion', 29)
     buildToolsVersion safeExtGet('android', 'buildToolsVersion', '29.0.3')
 
     defaultConfig {
         applicationId "io.agora.education"
-        minSdkVersion safeExtGet('android', 'minSdkVersion', '21')
-        targetSdkVersion safeExtGet('android', 'targetSdkVersion', '29')
+        minSdkVersion safeExtGet('android', 'minSdkVersion', 21)
+        targetSdkVersion safeExtGet('android', 'targetSdkVersion', 29)
         versionCode 10
         versionName "6.2.0"
 
@@ -71,15 +71,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.2.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
-    implementation project(path: ':extapp')
     annotationProcessor "com.jakewharton:butterknife-compiler:${safeExtGet('dependencies', 'com.jakewharton:butterknife-compiler', '10.2.1')}"
-
-//    debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.4'
-
-//    implementation 'com.tencent.bugly:crashreport:latest.release'
-    //其中latest.release指代最新Bugly SDK版本号，也可以指定明确的版本号，例如2.1.9
-//    implementation 'com.tencent.bugly:nativecrashreport:latest.release'
-    //其中latest.release指代最新Bugly NDK版本号，也可以指定明确的版本号，例如3.0
 
     // RtmTokenBuilder need
     implementation group: 'commons-codec', name: 'commons-codec', version: '1.15'
@@ -104,9 +96,11 @@ dependencies {
         api "com.squareup.retrofit2:converter-gson:${safeExtGet('dependencies', 'com.squareup.retrofit2:converter-gson', '2.9.0')}"
         api "androidx.constraintlayout:constraintlayout:${safeExtGet('dependencies', 'androidx.constraintlayout:constraintlayout', '2.0.4')}"
 
+
+        implementation "com.google.protobuf:protobuf-java:${safeExtGet('dependencies', 'com.google.protobuf:protobuf-java', '3.17.0')}"
         implementation "com.elvishew:xlog:${safeExtGet('dependencies', 'com.elvishew:xlog', '1.6.1')}"
         implementation "com.aliyun.dpa:oss-android-sdk:${safeExtGet('dependencies', 'com.aliyun.dpa:oss-android-sdk', '2.9.4')}"
-        implementation "com.github.agorabuilder:agora-special-full:${safeExtGet('dependencies', 'com.github.agorabuilder:agora-special-full', rootProject.ext.android.rtcSDKVersion)}"
+        implementation "com.github.agorabuilder:native-full-sdk:${safeExtGet('dependencies', 'com.github.agorabuilder:native-full-sdk', rootProject.ext.android.rtcSDKVersion)}"
         implementation "io.agora.rtm:rtm-sdk:${safeExtGet('dependencies', 'io.agora.rtm:rtm-sdk', rootProject.ext.android.rtmSDKVersion)}"
         implementation "com.github.duty-os:white-sdk-android:${safeExtGet('dependencies', 'com.github.duty-os:white-sdk-android', rootProject.ext.android.boardSDKVersion)}"
 
@@ -114,5 +108,6 @@ dependencies {
     } else {
         logger.warn('dependAAR is false')
         implementation project(path: ':edu')
+        compileOnly project(path: ':extapp')
     }
 }

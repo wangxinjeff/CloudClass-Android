@@ -4,9 +4,9 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import io.agora.edu.R
-import io.agora.edu.classroom.bean.PropertyCauseType
-import io.agora.edu.classroom.bean.PropertyCauseType.Companion.HANDSUP_ENABLE_CHANGED
-import io.agora.edu.classroom.bean.PropertyCauseType.Companion.COVIDEO_CHANGED
+import io.agora.edu.classroom.bean.PropertyData
+import io.agora.edu.classroom.bean.PropertyData.HANDSUP_ENABLE_CHANGED
+import io.agora.edu.classroom.bean.PropertyData.COVIDEO_CHANGED
 import io.agora.edu.common.bean.handsup.*
 import io.agora.edu.common.impl.HandsUpImpl
 import io.agora.edu.launch.AgoraEduLaunchConfig
@@ -52,7 +52,7 @@ class HandsUpManager(
 
     fun notifyHandsUpEnable(cause: MutableMap<String, Any>?) {
         if (cause != null && cause.isNotEmpty()) {
-            val causeType = cause[PropertyCauseType.CMD].toString().toFloat().toInt()
+            val causeType = cause[PropertyData.CMD].toString().toFloat().toInt()
             if (causeType == HANDSUP_ENABLE_CHANGED) {
                 val processesJson = getProperty(eduRoom?.roomProperties, processesKey)
                 val processesMap: MutableMap<String, Any>? = Gson().fromJson(processesJson, object : TypeToken<MutableMap<String, Any>>() {}.type)
@@ -74,9 +74,9 @@ class HandsUpManager(
     fun notifyHandsUpState(cause: MutableMap<String, Any>?) {
         val localUserUuid = eduUser.userInfo.userUuid
         if (cause != null && cause.isNotEmpty()) {
-            val causeType = cause[PropertyCauseType.CMD].toString().toFloat().toInt()
+            val causeType = cause[PropertyData.CMD].toString().toFloat().toInt()
             if (causeType == COVIDEO_CHANGED) {
-                val dataJson = cause[PropertyCauseType.DATA].toString()
+                val dataJson = cause[PropertyData.DATA].toString()
                 val data = Gson().fromJson(dataJson, HandsUpResData::class.java)
                 var coHost = false
                 var state = AgoraUIHandsUpState.Init

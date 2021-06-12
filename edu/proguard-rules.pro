@@ -212,3 +212,5 @@
 # extApp
 -keep class io.agora.extapp.** { *; }
 # extApp
+
+-keep class * extends com.google.protobuf.GeneratedMessageLite { *; }

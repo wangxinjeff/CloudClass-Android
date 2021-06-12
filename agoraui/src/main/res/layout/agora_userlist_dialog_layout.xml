@@ -88,7 +88,7 @@
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_weight="1.6"
+                android:layout_weight="1.9"
                 android:layout_height="wrap_content"
                 android:textColor="@color/theme_text_color_gray"
                 android:textSize="@dimen/text_size_smaller"
@@ -131,6 +131,15 @@
                 android:textColor="@color/theme_text_color_gray"
                 android:textSize="@dimen/text_size_smaller"
                 android:text="@string/agora_userlist_table_title_mic"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="@color/theme_text_color_gray"
+                android:textSize="@dimen/text_size_smaller"
+                android:text="@string/agora_userlist_table_title_silence"/>
 
             <TextView
                 android:layout_width="0dp"

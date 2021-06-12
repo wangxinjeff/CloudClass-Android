@@ -1,48 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="190dp"
+    android:layout_height="110dp"
+    xmlns:countdownClock="http://schemas.android.com/apk/res-auto"
+    android:background="@drawable/background_radius"
+    android:elevation="4dp">
 
-    <FrameLayout
-        android:layout_width="400dp"
-        android:layout_height="240dp"
-        android:background="@android:color/darker_gray"
-        android:layout_marginBottom="20dp"
-        android:layout_marginEnd="20dp"
-        android:padding="1dp"
-        android:layout_gravity="end|bottom">
-
-        <FrameLayout
+    <LinearLayout
+        android:layout_width="190dp"
+        android:layout_height="110dp"
+        android:orientation="vertical">
+        <RelativeLayout
+            android:id="@+id/countdown_title"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@android:color/white"
-            android:layout_gravity="end|bottom">
-
-            <Button
-                android:id="@+id/btn_start"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_horizontal"
-                android:text="Start"/>
-
-            <Button
-                android:id="@+id/btn_close"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:text="Close"/>
-
+            android:layout_height="32dp"
+            android:background="@drawable/dialog_bg_top">
             <TextView
-                android:id="@+id/tv_count"
+                android:id="@+id/countdown_title_text"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginStart="9dp"
+                android:layout_marginLeft="9dp"
+                android:layout_centerVertical="true"
+                android:textAlignment="gravity"
+                android:gravity="center_vertical"
+                android:textColor="#191919"
+                android:text="@string/count_down_str"/>
+        </RelativeLayout>
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.6dp"
+            android:background="#EEEEF7"/>
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="78dp"
+            android:background="@drawable/background_bottom">
+            <io.agora.extension.impl.countdown.CountDownClock
+                android:id="@+id/countdown_clock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:textSize="32sp"
-                android:text="0"/>
-
-        </FrameLayout>
-
-    </FrameLayout>
-
-</FrameLayout>
+                android:layout_centerVertical="true"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_centerInParent="true"
+                countdownClock:almostFinishedCallbackTimeInSeconds="3"
+                countdownClock:animationDuration="320"
+                countdownClock:countdownTickInterval="250"
+                countdownClock:digitBottomDrawable="@drawable/background_bottom"
+                countdownClock:digitDividerColor="@color/white2"
+                countdownClock:digitPadding="4dp"
+                countdownClock:digitSplitterColor="@color/deep_blue"
+                countdownClock:digitTextColor="@color/deep_blue"
+                countdownClock:digitTextSize="40dp"
+                countdownClock:digitTopDrawable="@drawable/background_top"
+                countdownClock:digitWidth="34dp"
+                countdownClock:halfDigitHeight="25dp"
+                countdownClock:resetSymbol="0"
+                countdownClock:splitterPadding="4dp" />
+        </RelativeLayout>
+    </LinearLayout>
+</RelativeLayout>

@@ -6,7 +6,8 @@ import com.google.gson.Gson
 import io.agora.base.callback.Callback
 import io.agora.base.callback.ThrowableCallback
 import io.agora.base.network.RetrofitManager
-import io.agora.edu.classroom.bean.PropertyCauseType
+import io.agora.edu.classroom.BaseManager
+import io.agora.edu.classroom.bean.PropertyData
 import io.agora.edu.common.bean.sidechat.SideChatConfig
 import io.agora.edu.common.bean.sidechat.SideChatStream
 import io.agora.edu.launch.AgoraEduLaunchConfig
@@ -23,11 +24,13 @@ import io.agora.educontext.EduContextUserInfo
 import io.agora.educontext.context.PrivateChatContext
 import org.json.JSONException
 
-class PrivateChatManager(private var context: Context,
-                         private val privateChatContext: PrivateChatContext?,
-                         private val currentRoom: EduRoom?,
-                         private val launchConfig: AgoraEduLaunchConfig) {
-    private val tag = "PrivateChatManager"
+class PrivateChatManager(
+        context: Context,
+        private val privateChatContext: PrivateChatContext?,
+        currentRoom: EduRoom?,
+        launchConfig: AgoraEduLaunchConfig,
+        eduUser: EduUser) : BaseManager(context, launchConfig, currentRoom, eduUser) {
+    override var tag = "PrivateChatManager"
 
     private var fromUserId: String? = null
     private var toUserUuid: String? = null
@@ -42,7 +45,7 @@ class PrivateChatManager(private var context: Context,
         mLocalUserUuid = localUserUuid
     }
 
-    fun  startPrivateChat(toUserUuid: String, callback: Callback<ResponseBody>): Boolean {
+    fun startPrivateChat(toUserUuid: String, callback: Callback<ResponseBody>): Boolean {
         if (isPrivateChatStarted()) {
             Log.e(tag, "private chat has already started, peer id $toUserUuid")
             return false
@@ -102,14 +105,14 @@ class PrivateChatManager(private var context: Context,
 
     fun notifyRoomPropertiesChangedForSideChat(classRoom: EduRoom, cause: MutableMap<String, Any>?) {
         if (cause != null && cause.isNotEmpty()) {
-            when (cause[PropertyCauseType.CMD].toString().toFloat().toInt()) {
-                PropertyCauseType.SIDE_CHAT_CREATE -> {
-                    Log.i(tag, "private chat created, json ${cause[PropertyCauseType.DATA].toString()}")
+            when (cause[PropertyData.CMD].toString().toFloat().toInt()) {
+                PropertyData.SIDE_CHAT_CREATE -> {
+                    Log.i(tag, "private chat created, json ${cause[PropertyData.DATA].toString()}")
                     handleSideChatPropertiesChanged(classRoom.roomProperties)
                 }
 
-                PropertyCauseType.SIDE_CHAT_DESTROY -> {
-                    Log.i(tag, "private chat deleted, json ${cause[PropertyCauseType.DATA].toString()}")
+                PropertyData.SIDE_CHAT_DESTROY -> {
+                    Log.i(tag, "private chat deleted, json ${cause[PropertyData.DATA].toString()}")
                     applySideChatRules(false, null)
                     setPrivateChat(false, null, null)
 
@@ -151,8 +154,10 @@ class PrivateChatManager(private var context: Context,
             setPrivateChat(true, config.users[0].userUuid, config.users[1].userUuid)
 
             val info = EduContextPrivateChatInfo(
-                    EduContextUserInfo(fromUserId!!, ""),
-                    EduContextUserInfo(toUserUuid!!, ""))
+                    EduContextUserInfo(fromUserId!!, "",
+                            properties = getUserFlexProps(fromUserId!!)),
+                    EduContextUserInfo(toUserUuid!!, "",
+                            properties = getUserFlexProps(toUserUuid!!)))
 
             privateChatContext?.getHandlers()?.forEach { h ->
                 h.onPrivateChatStarted(info)
@@ -165,7 +170,7 @@ class PrivateChatManager(private var context: Context,
     }
 
     private fun applySideChatRules(started: Boolean, config: SideChatConfig?) {
-        currentRoom?.getLocalUser(object : EduCallback<EduUser> {
+        eduRoom?.getLocalUser(object : EduCallback<EduUser> {
             override fun onSuccess(res: EduUser?) {
                 res?.let { localUser ->
                     var localUserInGroup = false
@@ -181,7 +186,7 @@ class PrivateChatManager(private var context: Context,
                             " private chat started: $started")
 
                     if (started) {
-                        currentRoom.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
+                        eduRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
                             override fun onSuccess(res: MutableList<EduStreamInfo>?) {
                                 res?.let { streamList ->
                                     val privateChatStreamGroup: MutableMap<String, SideChatStream> = mutableMapOf()
@@ -244,7 +249,7 @@ class PrivateChatManager(private var context: Context,
                     } else {
                         // If the chat is destroyed, rollback the subscription
                         // config to the default group, or default config
-                        currentRoom.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
+                        eduRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
                             override fun onSuccess(res: MutableList<EduStreamInfo>?) {
                                 res?.forEach { roomStream -> handleDefaultStreamRules(localUser, roomStream.publisher.userUuid) }
                             }
@@ -265,7 +270,7 @@ class PrivateChatManager(private var context: Context,
 
     private fun handleGroupStreamRules(localUser: EduUser, streamId: String, subscribe: Boolean,
                                        hasAudio: Boolean, hasVideo: Boolean) {
-        currentRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
+        eduRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
             override fun onSuccess(res: MutableList<EduStreamInfo>?) {
                 res?.forEach { streamInfo ->
                     if (streamInfo.streamUuid == streamId) {
@@ -285,7 +290,7 @@ class PrivateChatManager(private var context: Context,
         // rollback the subscription states to the case when there is
         // no private chat group. And the local user will subscribe all
         // streams that are valid in the room
-        currentRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
+        eduRoom?.getFullStreamList(object : EduCallback<MutableList<EduStreamInfo>> {
             override fun onSuccess(res: MutableList<EduStreamInfo>?) {
                 res?.forEach { streamInfo ->
                     if (streamInfo.publisher.userUuid != userId) {
@@ -305,7 +310,7 @@ class PrivateChatManager(private var context: Context,
 
     private fun handleGroupStreamRules(localUser: EduUser, streamInfo: EduStreamInfo,
                                        subscribe: Boolean, hasAudio: Boolean, hasVideo: Boolean) {
-        currentRoom?.let {
+        eduRoom?.let {
             if (subscribe && streamInfo.publisher.userUuid != launchConfig.userUuid) {
                 localUser.subscribeStream(streamInfo,
                         StreamSubscribeOptions(hasAudio, hasVideo, VideoStreamType.HIGH),
@@ -336,8 +341,5 @@ class PrivateChatManager(private var context: Context,
                         })
             }
         }
-    }
-
-    fun dispose() {
     }
 }

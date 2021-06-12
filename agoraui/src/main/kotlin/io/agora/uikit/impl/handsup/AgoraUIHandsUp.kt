@@ -80,8 +80,8 @@ class AgoraUIHandsUp(
             this@AgoraUIHandsUp.updateHandsUpState(state, coHost)
         }
 
-         override fun onHandsUpStateResultUpdated(error: EduContextError?) {
-             this@AgoraUIHandsUp.updateHandsUpStateResult(error)
+        override fun onHandsUpStateResultUpdated(error: EduContextError?) {
+            this@AgoraUIHandsUp.updateHandsUpStateResult(error)
         }
     }
 
@@ -102,7 +102,7 @@ class AgoraUIHandsUp(
                 countDownLayout.visibility = VISIBLE
                 if (curState == EduContextHandsUpState.Init || curState == EduContextHandsUpState.HandsDown) {
                     handsUpCountDownTimer.start()
-                } else if(curState == EduContextHandsUpState.HandsUp) {
+                } else if (curState == EduContextHandsUpState.HandsUp) {
                     cancelCountDownTimer.start()
                 }
             }
@@ -117,7 +117,6 @@ class AgoraUIHandsUp(
 
     fun setHandsUpEnable(enable: Boolean) {
         layout.post {
-            layout.visibility = if (enable) VISIBLE else GONE
             if (enable) {
                 layout.visibility = VISIBLE
             } else {

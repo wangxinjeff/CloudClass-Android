@@ -91,6 +91,11 @@ abstract class EduManager(
 
     abstract fun release()
 
+    /**appScenario: 0代表1v1， 1代表小版本， 2代表大班课，3代表超小， 4代表互动小班课（apaas的小班课）
+     * serviceType: 0代表aPaaS， 1代表PaaS
+     * appVersion:当前aPaaS版本 */
+    abstract fun reportAppScenario(appScenario: Int, serviceType: Int, appVersion: String)
+
     /**code:message
      * 1:parameter XXX is invalid
      * 2:internal error：可以内部订阅具体什么错误*/

@@ -11,7 +11,7 @@
         android:id="@+id/tv_user_name"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1.6"
+        android:layout_weight="1.9"
         android:ellipsize="end"
         android:gravity="center"
         android:paddingHorizontal="@dimen/padding_large"
@@ -46,9 +46,9 @@
         android:layout_width="0dp"
         android:layout_height="@dimen/agora_userlist_row_icon_height"
         android:layout_weight="1"
-        android:checked="true"
+        android:checked="false"
         android:drawableTop="@drawable/agora_userlist_camera_switch"
-        android:enabled="false"
+        android:enabled="true"
         android:gravity="center"
         android:text="@null" />
 
@@ -59,6 +59,17 @@
         android:layout_weight="1"
         android:checked="false"
         android:drawableTop="@drawable/agora_userlist_mic_switch"
+        android:enabled="true"
+        android:gravity="center"
+        android:text="@null" />
+
+    <CheckedTextView
+        android:id="@+id/ctv_silence"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/agora_userlist_row_icon_height"
+        android:layout_weight="1"
+        android:checked="false"
+        android:drawableTop="@drawable/agora_userlist_silence_switch"
         android:enabled="true"
         android:gravity="center"
         android:text="@null" />
@@ -79,7 +90,7 @@
             android:drawableStart="@drawable/agora_userlist_star_icon"
             android:enabled="true"
             android:gravity="center"
-            android:paddingHorizontal="@dimen/padding_medium"
+            android:paddingHorizontal="@dimen/padding_small"
             tools:text="x1" />
 
     </FrameLayout>

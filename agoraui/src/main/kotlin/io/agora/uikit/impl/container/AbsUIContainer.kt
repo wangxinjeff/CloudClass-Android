@@ -5,16 +5,21 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.util.Log
 import android.view.View
+import android.view.View.GONE
+import android.view.View.VISIBLE
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import io.agora.educontext.*
+import io.agora.uikit.R
 import io.agora.uikit.component.toast.AgoraUIToastManager
 import io.agora.uikit.educontext.handlers.*
 import io.agora.uikit.impl.chat.AgoraUIChatWindow
+import io.agora.uikit.impl.chat.tabs.ChatTabConfig
 import io.agora.uikit.impl.handsup.AgoraUIHandsUp
+import io.agora.uikit.impl.loading.AgoraUILoading
 import io.agora.uikit.impl.room.AgoraUIRoomStatus
+import io.agora.uikit.impl.screenshare.AgoraUIFullScreenBtn
 import io.agora.uikit.impl.screenshare.AgoraUIScreenShare
-import io.agora.uikit.impl.setting.DeviceConfig
 import io.agora.uikit.impl.tool.AgoraUIToolBar
 import io.agora.uikit.impl.users.AgoraUIReward
 import io.agora.uikit.impl.users.AgoraUIRoster
@@ -24,7 +29,10 @@ import io.agora.uikit.impl.whiteboard.AgoraUIWhiteBoard
 import io.agora.uikit.impl.whiteboard.paging.AgoraUIPagingControl
 import io.agora.uikit.interfaces.protocols.*
 
-abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraUIContainer {
+abstract class AbsUIContainer(
+        private val eduContext: EduContextPool?,
+        protected val config: AgoraContainerConfig) : IAgoraUIContainer {
+
     private val tag = "AbsUIContainer"
 
     /**
@@ -32,7 +40,13 @@ abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraU
      */
     private val containerRoomEventHandler = object : RoomHandler() {
         override fun onConnectionStateChanged(state: EduContextConnectionState) {
-            Log.i(tag, "onConnectionStateChanged -> $state")
+            super.onConnectionStateChanged(state)
+            agoraUILoading?.setVisibility(if (state == EduContextConnectionState.Connected) GONE else VISIBLE)
+            if (state == EduContextConnectionState.Connecting) {
+                agoraUILoading?.setContent(true)
+            } else if (state == EduContextConnectionState.Reconnecting) {
+                agoraUILoading?.setContent(false)
+            }
         }
 
         override fun onClassTip(tip: String) {
@@ -44,12 +58,43 @@ abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraU
         }
     }
 
+    private val containerDeviceEventHandler = object : DeViceHandler() {
+        override fun onDeviceTips(tips: String) {
+            super.onDeviceTips(tips)
+            AgoraUIToastManager.showShort(tips)
+        }
+    }
+
     /**
      * Container needs to receive and display chat tips
      */
     private val containerChatEventHandler = object : ChatHandler() {
         override fun onChatTips(tip: String) {
             AgoraUIToastManager.showShort(tip)
+        }
+
+        override fun onChatAllowed(allowed: Boolean, userInfo: EduContextUserInfo,
+                                   operator: EduContextUserInfo?, local: Boolean) {
+            if (operator == null) {
+                return
+            }
+
+            layout()?.let {
+                val tip: String = if (allowed && local) {
+                    val format = it.context.resources.getString(R.string.agora_message_chat_student_allow_local)
+                    String.format(format, operator.userName)
+                } else if (allowed && !local) {
+                    val format = it.context.resources.getString(R.string.agora_message_chat_student_allow_remote)
+                    String.format(format, userInfo.userName, operator.userName)
+                } else if (!allowed && local) {
+                    val format = it.context.resources.getString(R.string.agora_message_chat_student_ban_local)
+                    String.format(format, operator.userName)
+                } else {
+                    val format = it.context.resources.getString(R.string.agora_message_chat_student_ban_remote)
+                    String.format(format, userInfo.userName, operator.userName)
+                }
+                AgoraUIToastManager.showShort(tip)
+            }
         }
     }
 
@@ -73,6 +118,16 @@ abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraU
     }
 
     private val containerScreenShareHandler = object : ScreenShareHandler() {
+        override fun onSelectScreenShare(select: Boolean) {
+            if (select) {
+                fullScreenBtn?.setVisibility(View.VISIBLE)
+                pageControlWindow?.setVisibility(View.GONE)
+            } else {
+                fullScreenBtn?.setVisibility(View.GONE)
+                pageControlWindow?.setVisibility(View.VISIBLE)
+            }
+        }
+
         override fun onScreenShareTip(tips: String) {
             super.onScreenShareTip(tips)
             AgoraUIToastManager.showShort(tips)
@@ -106,20 +161,21 @@ abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraU
     protected var chatWindow: AgoraUIChatWindow? = null
     protected var whiteboardWindow: AgoraUIWhiteBoard? = null
     protected var pageControlWindow: AgoraUIPagingControl? = null
+    protected var fullScreenBtn: AgoraUIFullScreenBtn? = null
     protected var videoGroupWindow: AgoraUIVideoGroup? = null
     protected var screenShareWindow: AgoraUIScreenShare? = null
     protected var handsUpWindow: AgoraUIHandsUp? = null
     protected var studentVideoGroup: AgoraUserListVideoLayout? = null
     protected var roster: AgoraUIRoster? = null
     protected var rewardWindow: AgoraUIReward? = null
-
-    var deviceConfig = DeviceConfig()
+    protected var agoraUILoading: AgoraUILoading? = null
 
     private var context: Context? = null
     private var layout: ViewGroup? = null
 
     init {
         eduContext?.roomContext()?.addHandler(containerRoomEventHandler)
+        eduContext?.deviceContext()?.addHandler(containerDeviceEventHandler)
         eduContext?.chatContext()?.addHandler(containerChatEventHandler)
         eduContext?.whiteboardContext()?.addHandler(containerWhiteboardHandler)
         eduContext?.screenShareContext()?.addHandler(containerScreenShareHandler)
@@ -186,11 +242,17 @@ abstract class AbsUIContainer(private val eduContext: EduContextPool?) : IAgoraU
     override fun layout(): ViewGroup? {
         return this.layout
     }
+
+    protected abstract fun release()
 }
 
 enum class AgoraContainerType {
     OneToOne, SmallClass, LargeClass
 }
+
+data class AgoraContainerConfig(
+        val chatTabConfigs: List<ChatTabConfig>
+)
 
 object AgoraUIConfig {
     const val videoWidthMaxRatio = 0.312f

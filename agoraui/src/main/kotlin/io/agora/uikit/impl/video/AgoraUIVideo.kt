@@ -11,7 +11,7 @@ import android.widget.RelativeLayout
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.cardview.widget.CardView
-import io.agora.educontext.DeviceState
+import io.agora.educontext.EduContextDeviceState
 import io.agora.educontext.EduContextUserDetailInfo
 import io.agora.educontext.EduContextUserRole
 import io.agora.uikit.*
@@ -44,6 +44,9 @@ internal class AgoraUIVideo(
     private val offLineLoadingImg: AppCompatImageView = view.findViewById(R.id.offLine_loading_img)
     private val noCameraLayout: LinearLayout = view.findViewById(R.id.no_camera_layout)
     private val noCameraImg: AppCompatImageView = view.findViewById(R.id.no_camera_img)
+    private val cameraDisableLayout: LinearLayout = view.findViewById(R.id.camera_disable_layout)
+    private val cameraDisableImg: AppCompatImageView = view.findViewById(R.id.camera_disable_img)
+    private val tipLayout: LinearLayout = view.findViewById(R.id.tip_layout)
     private val trophyLayout: LinearLayout = view.findViewById(R.id.trophy_Layout)
     private val trophyText: AppCompatTextView = view.findViewById(R.id.trophy_Text)
     private val audioLayout: LinearLayout = view.findViewById(R.id.audio_Layout)
@@ -55,6 +58,9 @@ internal class AgoraUIVideo(
     private val boardGrantedIc: AppCompatImageView = view.findViewById(R.id.boardGranted_ic)
 
     private var userDetailInfo: EduContextUserDetailInfo? = null
+
+    @Volatile
+    var isLargeMode: Boolean = false
 
     init {
         view.x = left
@@ -91,6 +97,7 @@ internal class AgoraUIVideo(
                 videoOffImg.layoutParams.width = width
                 offLineLoadingImg.layoutParams.width = width
                 noCameraImg.layoutParams.width = width
+                cameraDisableImg.layoutParams.width = width
                 val maxSize = if (isLargeScreen) videoOptionIconSizeMaxWithLargeScreen else videoOptionIconSizeMax
                 val audioSize = min((tmp * videoOptionIconSizePercent).toInt(), maxSize)
                 audioLayout.layoutParams.width = audioSize
@@ -136,9 +143,10 @@ internal class AgoraUIVideo(
     }
 
     private fun setCameraState(info: EduContextUserDetailInfo) {
-        if (!info.onLine || info.cameraState == DeviceState.UnAvailable
-                || info.cameraState == DeviceState.Closed) {
+        if (!info.onLine || info.cameraState == EduContextDeviceState.UnAvailable
+                || info.cameraState == EduContextDeviceState.Closed) {
             videoIc.isEnabled = false
+            videoIc.isSelected = false
         } else {
             videoIc.isEnabled = true
             videoIc.isSelected = info.enableVideo
@@ -150,22 +158,19 @@ internal class AgoraUIVideo(
         videoOffLayout.visibility = GONE
         offLineLoadingLayout.visibility = GONE
         noCameraLayout.visibility = GONE
-//        if (!info.onLine || info.cameraState == DeviceState.Closed) {
-//            offLineLoadingLayout.visibility = VISIBLE
-//        } else if (!info.enableVideo) {
-//            videoOffLayout.visibility = VISIBLE
-//        } else if (info.enableVideo) {
-//            if (info.cameraState == DeviceState.UnAvailable) {
-//                noCameraLayout.visibility = VISIBLE
-//            } else {
-//                videoContainer.visibility = VISIBLE
-//            }
-//        }
-        if (!info.onLine || info.cameraState == DeviceState.Closed) {
+        cameraDisableLayout.visibility = GONE
+        tipLayout.visibility = GONE
+        if (isLargeMode) {
+            tipLayout.visibility = VISIBLE
+            return
+        }
+        if (!info.onLine) {
             offLineLoadingLayout.visibility = VISIBLE
-        } else if (info.cameraState == DeviceState.UnAvailable) {
+        } else if (info.cameraState == EduContextDeviceState.Closed) {
+            cameraDisableLayout.visibility = VISIBLE
+        } else if (info.cameraState == EduContextDeviceState.UnAvailable) {
             noCameraLayout.visibility = VISIBLE
-        } else if (info.cameraState == DeviceState.Available) {
+        } else if (info.cameraState == EduContextDeviceState.Available) {
             if (info.enableVideo) {
                 videoContainer.visibility = VISIBLE
             } else {
@@ -175,9 +180,10 @@ internal class AgoraUIVideo(
     }
 
     private fun setMicroState(info: EduContextUserDetailInfo) {
-        if (!info.onLine || info.microState == DeviceState.UnAvailable
-                || info.microState == DeviceState.Closed) {
+        if (!info.onLine || info.microState == EduContextDeviceState.UnAvailable
+                || info.microState == EduContextDeviceState.Closed) {
             audioIc.isEnabled = false
+            audioIc.isSelected = false
             volumeLayout.visibility = GONE
         } else {
             audioIc.isEnabled = true
@@ -214,21 +220,62 @@ internal class AgoraUIVideo(
             setMicroState(info)
             nameText.text = info.user.userName
             setVideoPlaceHolder(info)
+            // if largeMode is true, not need render Video
+            if (!isLargeMode) {
 
-            val currentVideoOpen: Boolean = userDetailInfo?.let {
-                it.onLine && it.enableVideo && it.cameraState == DeviceState.Available
-            } ?: false
-
-            val newVideoOpen = info.onLine && info.enableVideo && info.cameraState == DeviceState.Available
-
-            if (!currentVideoOpen && newVideoOpen) {
-                videoListener?.onRendererContainer(videoContainer, info.streamUuid)
-            } else if (currentVideoOpen && !newVideoOpen) {
-                videoListener?.onRendererContainer(null, info.streamUuid)
+                val currentVideoOpen: Boolean = userDetailInfo?.let {
+                    it.onLine && it.enableVideo && it.cameraState == EduContextDeviceState.Available
+                } ?: false
+                val newVideoOpen = info.onLine && info.enableVideo && info.cameraState == EduContextDeviceState.Available
+                if (!currentVideoOpen && newVideoOpen) {
+                    videoListener?.onRendererContainer(videoContainer, info.streamUuid)
+                } else if (currentVideoOpen && !newVideoOpen) {
+                    videoListener?.onRendererContainer(null, info.streamUuid)
+                }
             }
 
             this.userDetailInfo = info
         }
+    }
+
+
+    // called when switch rendering size(Maximize or Standard)
+    // only called on UIThread
+    fun upsertUserDetailInfo2(info: EduContextUserDetailInfo) {
+        Log.e(tag, "upsertUserDetailInfo->")
+
+        if (info.user.role == EduContextUserRole.Student) {
+            audioIc.setOnClickListener(this)
+            videoIc.setOnClickListener(this)
+            val reward = info.rewardCount
+            if (reward > 0) {
+                trophyLayout.visibility = if (info.coHost) VISIBLE else GONE
+                trophyText.text = String.format(view.context.getString(R.string.agora_video_reward),
+                        min(reward, 99))
+                trophyText.text = String.format(view.context.getString(R.string.agora_video_reward), info.rewardCount)
+            } else {
+                trophyLayout.visibility = GONE
+            }
+
+            boardGrantedIc.visibility = if (info.boardGranted) VISIBLE else INVISIBLE
+            setCameraState(info)
+            videoIc.visibility = if (info.coHost) GONE else VISIBLE
+        } else {
+            trophyLayout.visibility = GONE
+            videoIc.visibility = GONE
+        }
+
+        setMicroState(info)
+        nameText.text = info.user.userName
+        setVideoPlaceHolder(info)
+
+        if (!isLargeMode) {
+            videoListener?.onRendererContainer(videoContainer, info.streamUuid)
+        } else {
+//            videoListener?.onRendererContainer(null, info.streamUuid)
+        }
+
+        this.userDetailInfo = info
     }
 
     fun updateAudioVolumeIndication(value: Int, streamUuid: String) {
@@ -259,27 +306,6 @@ internal class AgoraUIVideo(
                 volumeIc.layoutParams = layoutParams
                 volumeLayout.addView(volumeIc)
             }
-        }
-    }
-
-    fun updateMediaMessage(msg: String) {
-        AgoraUIToastManager.showShort(msg)
-    }
-
-    fun updateReward(reward: Int) {
-        trophyText.post {
-            if (reward <= 0) {
-                trophyLayout.visibility = GONE
-            } else {
-                trophyText.text = String.format(view.context.getString(R.string.agora_video_reward),
-                        min(reward, 99))
-            }
-        }
-    }
-
-    fun updateGrantedStatus(granted: Boolean) {
-        boardGrantedIc?.post {
-            boardGrantedIc.visibility = if (granted) VISIBLE else INVISIBLE
         }
     }
 }

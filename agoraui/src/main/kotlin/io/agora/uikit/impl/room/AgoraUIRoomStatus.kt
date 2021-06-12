@@ -2,6 +2,7 @@ package io.agora.uikit.impl.room
 
 import android.annotation.SuppressLint
 import android.graphics.Rect
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,10 +11,13 @@ import androidx.appcompat.widget.AppCompatTextView
 import io.agora.educontext.EduContextClassState
 import io.agora.educontext.EduContextNetworkState
 import io.agora.educontext.EduContextPool
+import io.agora.educontext.EduContextUserInfo
 import io.agora.uikit.impl.AbsComponent
 import io.agora.uikit.R
+import io.agora.uikit.component.dialog.AgoraUIDialog
 import io.agora.uikit.component.dialog.AgoraUIDialogBuilder
 import io.agora.uikit.educontext.handlers.RoomHandler
+import io.agora.uikit.impl.setting.AgoraUIDeviceSettingDialog
 
 @SuppressLint("InflateParams")
 class AgoraUIRoomStatus(parent: ViewGroup,
@@ -22,6 +26,7 @@ class AgoraUIRoomStatus(parent: ViewGroup,
                         height: Int,
                         left: Int,
                         top: Int) : AbsComponent() {
+    private val tag = "AgoraUIRoomStatus"
 
     private val contentView: View = LayoutInflater.from(parent.context).inflate(
             R.layout.agora_status_bar_layout, parent, false)
@@ -29,23 +34,47 @@ class AgoraUIRoomStatus(parent: ViewGroup,
     private val className: AppCompatTextView
     private val classStateText: AppCompatTextView
     private val classTimeText: AppCompatTextView
-    private val exitBtn: AppCompatImageView
+    private val settingBtn: AppCompatImageView
+    private val uploadLogBtn: AppCompatImageView
+
+    private var destroyClassDialog: AgoraUIDialog? = null
 
     private val eventHandler = object : RoomHandler() {
         override fun onClassroomName(name: String) {
+            super.onClassroomName(name)
             setClassroomName(name)
         }
 
         override fun onClassState(state: EduContextClassState) {
+            super.onClassState(state)
             setClassState(state)
         }
 
         override fun onClassTime(time: String) {
+            super.onClassTime(time)
             setClassTime(time)
         }
 
         override fun onNetworkStateChanged(state: EduContextNetworkState) {
+            super.onNetworkStateChanged(state)
             setNetworkState(state)
+        }
+
+        override fun onLogUploaded(logData: String) {
+            super.onLogUploaded(logData)
+            //set log updated dialog
+            Log.d("updated log", "log updated ->$logData")
+            setUploadLogDialog(logData)
+        }
+
+        override fun onFlexRoomPropsInitialized(properties: MutableMap<String, Any>) {
+            super.onFlexRoomPropsInitialized(properties)
+            Log.i(tag, "onFlexRoomPropsInitialized->")
+        }
+
+        override fun onFlexRoomPropsChanged(changedProperties: MutableMap<String, Any>, properties: MutableMap<String, Any>, cause: MutableMap<String, Any>?, operator: EduContextUserInfo?) {
+            super.onFlexRoomPropsChanged(changedProperties, properties, cause, operator)
+            Log.i(tag, "onRoomPropertiesChanged->")
         }
     }
 
@@ -60,10 +89,18 @@ class AgoraUIRoomStatus(parent: ViewGroup,
         className = contentView.findViewById(R.id.agora_status_bar_classroom_name)
         classStateText = contentView.findViewById(R.id.agora_status_bar_class_started_text)
         classTimeText = contentView.findViewById(R.id.agora_status_bar_class_time_text)
-        exitBtn = contentView.findViewById(R.id.agora_status_bar_exit_icon)
+        settingBtn = contentView.findViewById(R.id.agora_status_bar_setting_icon)
+        uploadLogBtn = contentView.findViewById(R.id.agora_status_bar_upload_log_icon)
 
-        exitBtn.setOnClickListener {
-            showLeaveDialog()
+        settingBtn.setOnClickListener {
+//            showLeaveDialog()
+            showDeviceSettingDialog()
+        }
+
+        uploadLogBtn.setOnClickListener {
+            if (eduContext != null) {
+                eduContext.roomContext()?.uploadLog()
+            }
         }
 
         setNetworkState(EduContextNetworkState.Unknown)
@@ -83,15 +120,28 @@ class AgoraUIRoomStatus(parent: ViewGroup,
         }
     }
 
+    private fun showDeviceSettingDialog() {
+        settingBtn.isActivated = true
+        val dialog = AgoraUIDeviceSettingDialog(settingBtn.context, settingBtn, Runnable { showLeaveDialog() },
+                eduContext)
+        dialog.setOnDismissListener {
+            settingBtn.isActivated = false
+        }
+        dialog.show()
+    }
+
     private fun destroyClassDialog() {
         className.post {
-            AgoraUIDialogBuilder(className.context)
+            if (destroyClassDialog != null && destroyClassDialog!!.isShowing) {
+                return@post
+            }
+            destroyClassDialog = AgoraUIDialogBuilder(className.context)
                     .title(className.context.resources.getString(R.string.agora_dialog_class_destroy_title))
                     .message(className.context.resources.getString(R.string.agora_dialog_class_destroy))
                     .positiveText(className.context.resources.getString(R.string.confirm))
                     .positiveClick(View.OnClickListener { eduContext?.roomContext()?.leave() })
                     .build()
-                    .show()
+            destroyClassDialog!!.show()
         }
     }
 
@@ -138,6 +188,17 @@ class AgoraUIRoomStatus(parent: ViewGroup,
     fun setNetworkState(state: EduContextNetworkState) {
         networkImage.post {
             networkImage.setImageResource(getNetworkStateIcon(state))
+        }
+    }
+
+    fun setUploadLogDialog(logData: String) {
+        uploadLogBtn.post {
+            AgoraUIDialogBuilder(uploadLogBtn.context)
+                    .title(uploadLogBtn.context.resources.getString(R.string.agora_dialog_sent_log_success))
+                    .message(logData)
+                    .positiveText(uploadLogBtn.context.resources.getString(R.string.confirm))
+                    .build()
+                    .show()
         }
     }
 
