@@ -104,6 +104,16 @@ dependencies {
         implementation project(path: ':agoraui')
     } else {
         logger.warn('dependAAR is false')
+
+// only use edu module from jitpack
+//        implementation ('com.github.AgoraIO-Community:CloudClass-Android:v1.1.2.2') {
+//            exclude group: 'com.github.AgoraIO-Community.CloudClass-Android', module: 'educontext'
+//            exclude group: 'com.github.AgoraIO-Community.CloudClass-Android', module: 'extapp'
+//            exclude group: 'com.github.AgoraIO-Community.CloudClass-Android', module: 'widget'
+//            exclude group: 'com.github.AgoraIO-Community.CloudClass-Android', module: 'agoraui'
+//        }
+//        implementation project(path: ':agoraui')
+
         implementation project(path: ':edu')
         compileOnly project(path: ':extapp')
     }
