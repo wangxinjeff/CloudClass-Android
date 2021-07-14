@@ -225,6 +225,9 @@ internal class AgoraUIVideo(
                 videoListener?.onRendererContainer(videoContainer, info.streamUuid)
             } else if (currentVideoOpen && !newVideoOpen) {
                 videoListener?.onRendererContainer(null, info.streamUuid)
+            } else {
+                val parent = if(newVideoOpen) videoContainer else null
+                videoListener?.onRendererContainer(parent, info.streamUuid)
             }
 
             this.userDetailInfo = info

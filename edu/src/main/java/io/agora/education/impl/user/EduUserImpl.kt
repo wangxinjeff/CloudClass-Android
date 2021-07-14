@@ -48,12 +48,13 @@ import io.agora.rtc.video.VideoCanvas
 import io.agora.rte.RteEngineImpl
 import io.agora.rte.RteEngineImpl.OK
 import io.agora.rte.RteEngineImpl.getError
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 internal open class EduUserImpl(
         override var userInfo: EduLocalUserInfo
 ) : EduUser {
-    val TAG = EduUserImpl::class.java.simpleName
+    val tag = EduUserImpl::class.java.simpleName
 
     override var videoEncoderConfig = VideoEncoderConfig()
 
@@ -61,7 +62,9 @@ internal open class EduUserImpl(
 
     lateinit var eduRoom: EduRoomImpl
 
-    private val surfaceViewList = mutableListOf<SurfaceView>()
+    private val surfaceViewList = Collections.synchronizedList(mutableListOf<SurfaceView>())
+
+    private val surfaceViewMap = Collections.synchronizedMap(mutableMapOf<SurfaceView, ViewGroup>())
 
     final override var cachedRemoteVideoStates: MutableMap<String, Int> = ConcurrentHashMap()
 
@@ -70,7 +73,7 @@ internal open class EduUserImpl(
             callback.onFailure(parameterError("streamUuid"))
             return
         }
-        AgoraLog.i("$TAG->Start initOrUpdateLocalStream:${Gson().toJson(options)}")
+        AgoraLog.i("$tag->Start initOrUpdateLocalStream:${Gson().toJson(options)}")
         val a = RteEngineImpl.setVideoEncoderConfiguration(
                 Convert.convertVideoEncoderConfig(videoEncoderConfig))
         if (a != OK()) {
@@ -97,7 +100,7 @@ internal open class EduUserImpl(
 
     override fun switchCamera(): EduError? {
         val code = RteEngineImpl.switchCamera()
-        AgoraLog.i("$TAG->switchCamera:$code")
+        AgoraLog.i("$tag->switchCamera:$code")
         return if (code == OK()) null else mediaError(code, getError(code))
     }
 
@@ -109,10 +112,10 @@ internal open class EduUserImpl(
         }
         /**订阅远端流*/
         val uid: Int = (stream.streamUuid.toLong() and 0xffffffffL).toInt()
-        Log.e(TAG, "")
+        Log.e(tag, "")
         val code = RteEngineImpl.muteRemoteStream(eduRoom.getCurRoomUuid(), uid, !options.subscribeAudio,
                 !options.subscribeVideo)
-        AgoraLog.i("$TAG->subscribeStream: streamUuid:${stream.streamUuid},audio:${options.subscribeAudio}," +
+        AgoraLog.i("$tag->subscribeStream: streamUuid:${stream.streamUuid},audio:${options.subscribeAudio}," +
                 "video:${options.subscribeVideo}, code: $code")
         if (code == OK()) {
             callback.onSuccess(Unit)
@@ -130,7 +133,7 @@ internal open class EduUserImpl(
         val uid: Int = (stream.streamUuid.toLong() and 0xffffffffL).toInt()
         val code = RteEngineImpl.muteRemoteStream(eduRoom.getCurRoomUuid(), uid, !options.subscribeAudio,
                 !options.subscribeVideo)
-        AgoraLog.i("$TAG->unSubscribeStream: streamUuid: ${stream.streamUuid},audio:${options.subscribeAudio}," +
+        AgoraLog.i("$tag->unSubscribeStream: streamUuid: ${stream.streamUuid},audio:${options.subscribeAudio}," +
                 "video:${options.subscribeVideo},code: $code")
         if (code == OK()) {
             callback.onSuccess(Unit)
@@ -148,13 +151,13 @@ internal open class EduUserImpl(
         val eduStreamStatusReq = EduStreamStatusReq(stream.streamName, stream.videoSourceType.value,
                 AudioSourceType.MICROPHONE.value, if (stream.hasVideo) 1 else 0,
                 if (stream.hasAudio) 1 else 0)
-        AgoraLog.logMsg("$TAG->Create new Stream: ${Gson().toJson(stream)}", LogLevel.INFO.value)
+        AgoraLog.logMsg("$tag->Create new Stream: ${Gson().toJson(stream)}", LogLevel.INFO.value)
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), StreamService::class.java)
                 .createStream(APPID, eduRoom.getCurRoomUuid(), userInfo.userUuid,
                         stream.streamUuid, eduStreamStatusReq)
                 .enqueue(RetrofitManager.Callback(0, object : ThrowableCallback<ResponseBody<String>> {
                     override fun onSuccess(res: ResponseBody<String>?) {
-                        AgoraLog.logMsg("$TAG->publishStream state: streamUuid: ${stream.streamUuid}," +
+                        AgoraLog.logMsg("$tag->publishStream state: streamUuid: ${stream.streamUuid}," +
                                 "${stream.hasAudio},${stream.hasVideo}",
                                 LogLevel.INFO.value)
                         val a = RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(), CLIENT_ROLE_BROADCASTER)
@@ -192,10 +195,10 @@ internal open class EduUserImpl(
         if (index > -1) {
             val oldStream = eduRoom.getCurStreamList()[index]
             if (oldStream == stream) {
-                AgoraLog.e("$TAG->Wanted state of the stream to be updated is same with the current state，return")
+                AgoraLog.e("$tag->Wanted state of the stream to be updated is same with the current state，return")
                 callback.onSuccess(true)
             } else {
-                AgoraLog.i("$TAG->Start updating locally existing stream info, streamUuid: + " +
+                AgoraLog.i("$tag->Start updating locally existing stream info, streamUuid: + " +
                         "${stream.streamUuid}, Wanted state is:${stream.hasAudio},${stream.hasVideo}")
                 /**设置角色*/
                 val a = RteEngineImpl.setClientRole(eduRoom.getCurRoomUuid(), CLIENT_ROLE_BROADCASTER)
@@ -223,12 +226,12 @@ internal open class EduUserImpl(
                         .enqueue(RetrofitManager.Callback(0, object : ThrowableCallback<ResponseBody<String>> {
                             override fun onSuccess(res: ResponseBody<String>?) {
 //                                (streamInfo as EduStreamInfoImpl).updateTime = res?.timeStamp
-                                AgoraLog.i("$TAG->Update stream info success, streamUuid: + ${stream.streamUuid}")
+                                AgoraLog.i("$tag->Update stream info success, streamUuid: + ${stream.streamUuid}")
                                 callback.onSuccess(true)
                             }
 
                             override fun onFailure(throwable: Throwable?) {
-                                AgoraLog.e("$TAG->Update stream info failed,streamUuid: + ${stream.streamUuid}")
+                                AgoraLog.e("$tag->Update stream info failed,streamUuid: + ${stream.streamUuid}")
                                 var error = throwable as? BusinessException
                                 callback.onFailure(httpError(error?.code
                                         ?: AgoraError.INTERNAL_ERROR.value,
@@ -239,7 +242,7 @@ internal open class EduUserImpl(
         } else {
             val error = customMsgError("The stream you want to update does not exist locally, " +
                     "streamUuid: + ${stream.streamUuid}")
-            AgoraLog.e("$TAG->${error.msg}")
+            AgoraLog.e("$tag->${error.msg}")
             callback.onFailure(error)
         }
     }
@@ -249,7 +252,7 @@ internal open class EduUserImpl(
             callback.onFailure(parameterError("streamUuid"))
             return
         }
-        AgoraLog.i("$TAG->Del stream:${stream.streamUuid}")
+        AgoraLog.i("$tag->Del stream:${stream.streamUuid}")
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), StreamService::class.java)
                 .deleteStream(APPID, eduRoom.getCurRoomUuid(), userInfo.userUuid,
                         stream.streamUuid)
@@ -284,7 +287,7 @@ internal open class EduUserImpl(
     }
 
     override fun sendRoomMessage(message: String, callback: EduCallback<EduMsg>) {
-        AgoraLog.i("$TAG->sendRoomMessage:$message")
+        AgoraLog.i("$tag->sendRoomMessage:$message")
         val roomMsgReq = EduRoomMsgReq(message)
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), RoomService::class.java)
                 .sendChannelCustomMessage(APPID, eduRoom.getCurRoomUuid(), roomMsgReq)
@@ -305,7 +308,7 @@ internal open class EduUserImpl(
     }
 
     override fun sendUserMessage(message: String, remoteUser: EduUserInfo, callback: EduCallback<EduMsg>) {
-        AgoraLog.i("$TAG->sendUserMessage:$message,remoteUserUuid:${remoteUser.userUuid}")
+        AgoraLog.i("$tag->sendUserMessage:$message,remoteUserUuid:${remoteUser.userUuid}")
         val userMsgReq = EduUserMsgReq(message)
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), RoomService::class.java)
                 .sendPeerCustomMessage(APPID, eduRoom.getCurRoomUuid(), remoteUser.userUuid, userMsgReq)
@@ -326,7 +329,7 @@ internal open class EduUserImpl(
     }
 
     override fun sendRoomChatMessage(message: String, callback: EduCallback<EduChatMsg>) {
-        AgoraLog.i("$TAG->sendRoomChatMessage:$message")
+        AgoraLog.i("$tag->sendRoomChatMessage:$message")
         val roomChatMsgReq = EduRoomChatMsgReq(message, EduChatMsgType.Text.value)
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), RoomService::class.java)
                 .sendRoomChatMsg(eduRoom.getCurLocalUser().userInfo.userToken!!, APPID,
@@ -348,7 +351,7 @@ internal open class EduUserImpl(
     }
 
     override fun sendUserChatMessage(message: String, remoteUser: EduUserInfo, callback: EduCallback<EduChatMsg>) {
-        AgoraLog.i("$TAG->sendUserChatMessage:$message,remoteUserUuid:${remoteUser.userUuid}")
+        AgoraLog.i("$tag->sendUserChatMessage:$message,remoteUserUuid:${remoteUser.userUuid}")
         val userChatMsgReq = EduUserChatMsgReq(message, EduChatMsgType.Text.value)
         RetrofitManager.instance()!!.getService(AgoraEduSDK.baseUrl(), RoomService::class.java)
                 .sendPeerChatMsg(APPID, eduRoom.getCurRoomUuid(), remoteUser.userUuid, userChatMsgReq)
@@ -381,7 +384,7 @@ internal open class EduUserImpl(
             callback.onFailure(parameterError("timeout"))
             return
         }
-        AgoraLog.i("$TAG->startActionWithConfig:${Gson().toJson(config)}")
+        AgoraLog.i("$tag->startActionWithConfig:${Gson().toJson(config)}")
         val actionReq = EduActionReq(userInfo.userUuid, ReqPayload(config.action.value,
                 ReqUser(userInfo.userUuid, userInfo.userName, userInfo.role.name),
                 ReqRoom(eduRoom.getCurRoomInfo().roomName, eduRoom.getCurRoomUuid())))
@@ -406,7 +409,7 @@ internal open class EduUserImpl(
             callback.onFailure(parameterError("processUuid"))
             return
         }
-        AgoraLog.i("$TAG->stopActionWithConfig:${Gson().toJson(config)}")
+        AgoraLog.i("$tag->stopActionWithConfig:${Gson().toJson(config)}")
         val actionReq = EduActionReq(userInfo.userUuid, ReqPayload(config.action.value,
                 ReqUser(userInfo.userUuid, userInfo.userName, userInfo.role.name),
                 ReqRoom(eduRoom.getCurRoomInfo().roomName, eduRoom.getCurRoomUuid())))
@@ -439,50 +442,107 @@ internal open class EduUserImpl(
         if (TextUtils.isEmpty(channelId)) {
             return parameterError("channelId")
         }
+        val list = surfaceViewList.filter { it.tag == stream.streamUuid }
+        if (list.size > 1) {
+            Log.w(tag, "setStreamView, more than one surface view is " +
+                    "created for a single stream ${stream.streamUuid}, check " +
+                    " the code with cautions")
+            return mediaError(-1, "Duplicated surface views " +
+                    "created for stream ${stream.streamUuid}")
+        }
+
+        var uid: Int = (stream.streamUuid.toLong() and 0xffffffffL).toInt()
         val videoCanvas: VideoCanvas
         if (viewGroup == null) {
-            /**remove掉当前流对应的surfaceView*/
-            val uid: Int = (stream.streamUuid.toLong() and 0xffffffffL).toInt()
+            // View group is null means we want to remove the video
+            // surface of the corresponding stream uuid.
+            val surface = if (list.isNotEmpty()) list[0] else null
+            if (surface != null) {
+                Log.d(tag, "Remove surface $surface for stream " +
+                        "${stream.streamUuid} from parent ${surface.parent}")
+                removeSurface(surface)
+            } else {
+                Log.d(tag, "Remove surface for parent $viewGroup, but " +
+                        "the surface does not exist, operation ignored.")
+            }
+
             videoCanvas = VideoCanvas(null, config.renderMode.value, uid)
-            val iterable = surfaceViewList.iterator()
-            while (iterable.hasNext()) {
-                val surfaceView = iterable.next()
-                if (stream.streamUuid == surfaceView.tag && surfaceView.parent != null) {
-                    (surfaceView.parent as ViewGroup).removeView(surfaceView)
-                }
-                iterable.remove()
-            }
         } else {
-            checkAndRemoveSurfaceView(stream.streamUuid)?.let {
-                viewGroup.removeView(it)
+            var oldSurfaceView: SurfaceView? = null
+            (if (list.isNotEmpty()) list[0] else null)?.let { surface ->
+                oldSurfaceView = surface
+                surfaceViewMap[surface]?.let { parent ->
+                    if (parent == viewGroup) {
+                        // If the view group has already set a video surface,
+                        // nothing will be done to this stream and view group.
+                        Log.d(tag, "The same view group is repeatedly passed " +
+                                "to stream ${stream.streamUuid}, maintain the current " +
+                                "surface view and nothing is done.")
+                        return EduError.noError()
+                    }
+                }
             }
-            val appContext = viewGroup.context.applicationContext
-            val surfaceView = RtcEngine.CreateRendererView(appContext)
-            surfaceView.tag = stream.streamUuid
-            val layoutParams = ViewGroup.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
-            surfaceView.layoutParams = layoutParams
-            var uid: Int = ((stream.streamUuid.toLong()) and 0xffffffffL).toInt()
-            if (stream.publisher.userUuid == this.userInfo.userUuid) {
+
+            // Remove and create a new video surface for this stream if:
+            // 1. no surface has been created;
+            // 2. a new view group has been passed
+            oldSurfaceView?.let {
+                Log.d(tag, "remove existing surface view for stream " +
+                        "${stream.streamUuid} from parent parent ${it.parent}")
+                removeSurface(it)
+            }
+
+            val surface = RtcEngine.CreateRendererView(
+                    viewGroup.context.applicationContext)
+            surface.tag = stream.streamUuid
+            surface.setZOrderMediaOverlay(top)
+            surface.layoutParams = ViewGroup.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT)
+            Log.d(tag, "add a new surface view $surface for stream " +
+                    "${stream.streamUuid} to parent $viewGroup")
+            addSurface(viewGroup, surface)
+
+            if (stream.publisher.userUuid == userInfo.userUuid) {
+                // Note, rtc video canvas requires that the rtc
+                // media uid should be 0 for local user.
                 uid = 0
             }
-            videoCanvas = VideoCanvas(surfaceView, config.renderMode.value, channelId, uid)
-            viewGroup.addView(surfaceView)
-            surfaceView.setZOrderMediaOverlay(top)
-            surfaceViewList.add(surfaceView)
+            videoCanvas = VideoCanvas(surface, config.renderMode.value, channelId, uid)
         }
-        var code: Int
-        if (stream.publisher.userUuid == this.userInfo.userUuid) {
-            code = RteEngineImpl.setupLocalVideo(videoCanvas)
-            if (code == 0) {
-                AgoraLog.e("$TAG->setupLocalVideo success")
+
+        val code = if (uid == 0) {
+            val result = RteEngineImpl.setupLocalVideo(videoCanvas)
+            if (result == 0) {
+                AgoraLog.e("$tag->setupLocalVideo success")
             }
+            result
         } else {
-            code = RteEngineImpl.setupRemoteVideo(videoCanvas)
-            if (code == 0) {
-                AgoraLog.e("$TAG->setupRemoteVideo success")
+            val result = RteEngineImpl.setupRemoteVideo(videoCanvas)
+            if (result == 0) {
+                AgoraLog.e("$tag->setupRemoteVideo success")
             }
+            result
         }
+
         return EduError(code, getError(code))
+    }
+
+    private fun addSurface(parent: ViewGroup, surface: SurfaceView) {
+        parent.addView(surface)
+        if (!surfaceViewList.contains(surface)) {
+            surfaceViewList.add(surface)
+        }
+
+        if (!surfaceViewMap.containsKey(surface)) {
+            surfaceViewMap[surface] = parent
+        }
+    }
+
+    private fun removeSurface(surface: SurfaceView) {
+        (surface.parent as? ViewGroup)?.removeView(surface)
+        surfaceViewList.remove(surface)
+        surfaceViewMap.remove(surface)
     }
 
     override fun setStreamView(stream: EduStreamInfo, channelId: String, viewGroup: ViewGroup?, top: Boolean): EduError {
@@ -493,7 +553,7 @@ internal open class EduUserImpl(
     }
 
     internal fun removeAllSurfaceView() {
-        AgoraLog.w("$TAG->Clear all SurfaceView")
+        AgoraLog.w("$tag->Clear all SurfaceView")
         if (surfaceViewList.size > 0) {
             surfaceViewList.forEach {
                 val parent = it.parent
@@ -509,6 +569,9 @@ internal open class EduUserImpl(
                     }
                 }
             }
+
+            surfaceViewList.clear()
+            surfaceViewMap.clear()
         }
     }
 
