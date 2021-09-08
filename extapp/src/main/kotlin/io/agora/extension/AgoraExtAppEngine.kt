@@ -6,16 +6,20 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.core.content.ContextCompat
+import io.agora.educontext.EduContextPool
 
 class AgoraExtAppEngine(
         private var context: Context,
         private var container: RelativeLayout,
+        private var eduContext: EduContextPool,
         internal var aPaaSEntry: IAgoraExtAppAPaaSEntry) {
 
     private val tag = "AgoraExtAppEngine"
     private val launchedExtAppList = mutableListOf<AgoraExtAppItem>()
     private val launchedExtAppMap = mutableMapOf<String, AgoraExtAppItem>()
     private val launchedExtAppMapTransformed = mutableMapOf<String, AgoraExtAppItem>()
+
+    private var appDraggable = false
 
     companion object {
         private val registeredAppList = ArrayList<AgoraExtAppItem>()
@@ -101,7 +105,8 @@ class AgoraExtAppEngine(
      * @param identifier id of the extension app
      * @param formatted whether the identifier is a formatted one.
      */
-    @Synchronized fun launchExtApp(identifier: String, formatted: Boolean = false, currentTime: Long): Int {
+    @Synchronized
+    fun launchExtApp(identifier: String, formatted: Boolean = false, currentTime: Long): Int {
         if (formatted && launchedExtAppMapTransformed.containsKey(identifier)) {
             Log.w(tag, "launch ext app: app $identifier has been launched")
             return AgoraExtAppErrorCode.ExtAppIdDuplicated
@@ -140,7 +145,10 @@ class AgoraExtAppEngine(
             if (item.contentView != null) {
                 container.addView(item.contentView, RelativeLayout.LayoutParams(
                         item.param.width, item.param.height))
-                item.instance?.onExtAppLoaded(this.context, container)
+                item.instance?.onExtAppLoaded(this.context, container, item.contentView!!, eduContext)
+                item.instance?.setDraggable(appDraggable)
+                val position = aPaaSEntry.getAppPosition(item.appIdentifier)
+                item.instance?.onPositionSync(position.userId, position.x, position.y)
             } else {
                 Log.w(tag, "launch ext app: cannot find container or content view, app $identifier")
             }
@@ -149,7 +157,8 @@ class AgoraExtAppEngine(
         return AgoraExtAppErrorCode.ExtAppNoError
     }
 
-    @Synchronized fun stopExtApp(identifier: String, formatted: Boolean = false): Int {
+    @Synchronized
+    fun stopExtApp(identifier: String, formatted: Boolean = false): Int {
         if (formatted && !registeredAppMapTransformed.containsKey(identifier)) {
             Log.w(tag, "stop ext app: app $identifier is not registered")
             return AgoraExtAppErrorCode.ExtAppIdNonExist
@@ -166,14 +175,13 @@ class AgoraExtAppEngine(
 
         app?.let { item ->
             ContextCompat.getMainExecutor(context).execute {
-                item.instance?.onExtAppUnloaded()
                 (container as? ViewGroup)?.removeView(item.contentView)
+                item.instance?.onExtAppUnloaded()
+                item.instance = null
+                launchedExtAppMapTransformed.remove(item.formatIdentifier)
+                launchedExtAppMap.remove(item.appIdentifier)
+                launchedExtAppList.remove(item)
             }
-
-            item.instance = null
-            launchedExtAppMapTransformed.remove(item.formatIdentifier)
-            launchedExtAppMap.remove(item.appIdentifier)
-            launchedExtAppList.remove(item)
         }
 
         if (app == null) {
@@ -203,7 +211,8 @@ class AgoraExtAppEngine(
         aPaaSEntry.deleteProperties(identifier, propertyKeys, cause, callback)
     }
 
-    @Synchronized fun onExtAppPropertyUpdated(identifier: String,
+    @Synchronized
+    fun onExtAppPropertyUpdated(identifier: String,
                                 properties: MutableMap<String, Any?>?,
                                 cause: MutableMap<String, Any?>?,
                                 state: MutableMap<String, Any?>?, currentTime: Long): Int {
@@ -245,6 +254,35 @@ class AgoraExtAppEngine(
         return launched
     }
 
+    fun setAppDraggable(draggable: Boolean) {
+        this.appDraggable = draggable
+        launchedExtAppMap.forEach { entry ->
+            entry.value.instance?.setDraggable(draggable)
+        }
+    }
+
+    fun enableSendExtAppTracks(enable: Boolean) {
+        launchedExtAppMap.forEach { entry ->
+            entry.value.instance?.enableSendTrack(enable)
+        }
+    }
+
+    /**
+     * Sync position info of an ext app to other remote users
+     * @param identifier id of the ext app
+     */
+    internal fun syncAppPosition(identifier: String, userId: String, diffX: Float, diffY: Float) {
+        launchedExtAppMap[identifier]?.let { item ->
+            aPaaSEntry.syncAppPosition(item.appIdentifier, userId, diffX, diffY)
+        }
+    }
+
+    fun onAppPositionSync(identifier: String, userId: String, diffX: Float, diffY: Float) {
+        launchedExtAppMap[identifier]?.let { item ->
+            item.instance?.onPositionSync(userId, diffX, diffY)
+        }
+    }
+
     fun onRoomInfoChanged(roomInfo: AgoraExtAppRoomInfo) {
         launchedExtAppMap.forEach { item ->
             item.value.instance?.onRoomInfoUpdate(roomInfo)
@@ -258,8 +296,13 @@ class AgoraExtAppEngine(
     }
 
     fun dispose() {
+        val launchedAppId = mutableListOf<String>()
         launchedExtAppMap.forEach { item ->
-            stopExtApp(item.value.appIdentifier)
+            launchedAppId.add(item.value.appIdentifier)
+        }
+
+        launchedAppId.forEach { id ->
+            stopExtApp(id)
         }
     }
 }

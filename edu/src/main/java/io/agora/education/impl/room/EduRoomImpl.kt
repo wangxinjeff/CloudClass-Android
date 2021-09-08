@@ -217,16 +217,16 @@ internal class EduRoomImpl(
         /**Set the video resolution according to the classType*/
         when (getCurRoomType()) {
             RoomType.ONE_ON_ONE -> {
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
+                syncSession.localUser.videoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
+                syncSession.localUser.videoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
             }
             RoomType.SMALL_CLASS -> {
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
+                syncSession.localUser.videoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
+                syncSession.localUser.videoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
             }
             RoomType.LARGE_CLASS -> {
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
-                syncSession.localUser.eduVideoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
+                syncSession.localUser.videoEncoderConfig.videoDimensionWidth = VideoDimensions_320X240[0]
+                syncSession.localUser.videoEncoderConfig.videoDimensionHeight = VideoDimensions_320X240[1]
             }
             else -> {
                 /**default is 360 * 360*/
@@ -294,8 +294,12 @@ internal class EduRoomImpl(
                                         ReportManager.getHeartbeat()?.startHeartbeat(
                                                 roomEntryRes.room.roomInfo.roomUuid,
                                                 roomEntryRes.user.userUuid)
-
                                         AgoraLog.i("$TAG->Full data pull and merge successfully,init localStream")
+                                        if (options.videoEncoderConfig != null) {
+                                            setVideoEncoderConfig(options.videoEncoderConfig!!)
+                                        } else {
+                                            setVideoEncoderConfig(syncSession.localUser.videoEncoderConfig)
+                                        }
                                         initOrUpdateLocalStream(roomEntryRes, mediaOptions, object : EduCallback<Unit> {
                                             override fun onSuccess(res: Unit?) {
                                                 joinSuccess(syncSession.localUser, joinCallback as EduCallback<EduUser>)
@@ -345,6 +349,16 @@ internal class EduRoomImpl(
                 }))
     }
 
+    private fun setVideoEncoderConfig(videoEncoderConfig: EduVideoEncoderConfig) {
+        val a = RteEngineImpl.setVideoEncoderConfiguration(
+                Convert.convertVideoEncoderConfig(videoEncoderConfig))
+        if (a != RteEngineImpl.OK()) {
+            AgoraLog.e(TAG, "Media error->$a,reason-> set video encoder config failed")
+        } else {
+            AgoraLog.i(TAG, "set video encoder config successfully")
+        }
+    }
+
     private fun joinRte(rtcToken: String, rtcUid: Long, channelMediaOptions: ChannelMediaOptions,
                         tag: Int?, @NonNull callback: RteCallback<Void>) {
         AgoraLog.i("$TAG->join Rtc and Rtm")
@@ -364,6 +378,7 @@ internal class EduRoomImpl(
     private fun initOrUpdateLocalStream(classRoomEntryRes: EduEntryRes, roomMediaOptions: RoomMediaOptions,
                                         callback: EduCallback<Unit>) {
         val localStreamInitOptions = LocalStreamInitOptions(classRoomEntryRes.user.streamUuid,
+                roomMediaOptions.autoPublish, roomMediaOptions.autoPublish,
                 roomMediaOptions.autoPublish, roomMediaOptions.autoPublish)
         AgoraLog.i("$TAG->initOrUpdateLocalStream for localUser:${Gson().toJson(localStreamInitOptions)}")
         syncSession.localUser.initOrUpdateLocalStream(localStreamInitOptions, object : EduCallback<EduStreamInfo> {
@@ -400,6 +415,26 @@ internal class EduRoomImpl(
             override fun onFailure(error: EduError) {
                 AgoraLog.e("$TAG->Failed to initOrUpdateLocalStream for localUser")
                 callback.onFailure(error)
+            }
+        })
+    }
+
+    private fun handleLocalStream(stream: EduStreamInfo, callback: EduCallback<Unit>?) {
+        val localStreamInitOptions = LocalStreamInitOptions(stream.streamUuid, stream.hasVideo,
+                stream.hasAudio, stream.hasVideo, stream.hasAudio)
+        AgoraLog.i("$TAG->initOrUpdateLocalStream for localUser:${Gson().toJson(localStreamInitOptions)}")
+        syncSession.localUser.initOrUpdateLocalStream(localStreamInitOptions, object : EduCallback<EduStreamInfo> {
+            override fun onSuccess(res: EduStreamInfo?) {
+                AgoraLog.i("$TAG->initOrUpdateLocalStream success")
+                RteEngineImpl.setClientRole(getCurRoomUuid(), CLIENT_ROLE_BROADCASTER)
+                RteEngineImpl.muteLocalStream(!stream.hasAudio, !stream.hasVideo)
+                RteEngineImpl.publish(getCurRoomUuid())
+                callback?.onSuccess(Unit)
+            }
+
+            override fun onFailure(error: EduError) {
+                AgoraLog.e("$TAG->Failed to initOrUpdateLocalStream for localUser")
+                callback?.onFailure(error)
             }
         })
     }
@@ -444,8 +479,7 @@ internal class EduRoomImpl(
                         /**本地流维护在本地用户信息中和全局集合中*/
                         syncSession.localUser.userInfo.streams.add(element)
                         /**根据流信息，更新本地媒体状态*/
-                        RteEngineImpl.updateLocalStream(streamInfo.hasAudio, streamInfo.hasVideo)
-                        RteEngineImpl.publish(getCurRoomUuid())
+                        handleLocalStream(streamInfo, null)
                         AgoraLog.i("$TAG->Join success，callback the added localStream to upper layer")
                         AgoraLog.i("$TAG->onLocalStreamAdded:${Gson().toJson(element)}")
                         syncSession.localUser.eventListener?.onLocalStreamAdded(element)

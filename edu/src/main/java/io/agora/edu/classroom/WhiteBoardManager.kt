@@ -1,7 +1,6 @@
 package io.agora.edu.classroom
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Context
 import android.text.TextUtils
 import android.util.Log
@@ -33,6 +32,8 @@ import io.agora.educontext.EduBoardRoomPhase
 import io.agora.educontext.WhiteboardApplianceType
 import io.agora.educontext.WhiteboardDrawingConfig
 import io.agora.educontext.context.WhiteboardContext
+import io.agora.extapp.ExtAppTrackListener
+import io.agora.extension.ExtAppPosition
 import io.agora.report.ReportManager
 import io.agora.whiteboard.netless.bean.AgoraBoardFitMode
 import io.agora.whiteboard.netless.listener.BoardEventListener
@@ -41,6 +42,7 @@ import io.agora.whiteboard.netless.manager.BoardProxy
 import org.json.JSONObject
 import wendu.dsbridge.DWebView
 import java.io.File
+import java.util.*
 
 @SuppressLint("ClickableViewAccessibility")
 class WhiteBoardManager(
@@ -67,19 +69,20 @@ class WhiteBoardManager(
     private var followTips = false
     private var curFollowState = false
     var whiteBoardManagerEventListener: WhiteBoardManagerEventListener? = null
+    var extAppTrackListener: ExtAppTrackListener? = null
 
-    // this's not a real-time value
+    // this is not a real-time value
     private var curSceneState: SceneState? = null
     private var boardPreloadManager: BoardPreloadManager? = null
     private var courseware: AgoraEduCourseware? = null
     private val defaultCoursewareName = "init"
     private var scenePpts: Array<Scene?>? = null
 
-    //        private var loadPreviewPpt: Boolean = true
     private var loadPreviewPpt: Boolean = false
     private var lastSceneDir: String? = null
     private var inputTips = false
     private var transform = false
+
     private val webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
             val host = request?.url?.host
@@ -94,6 +97,13 @@ class WhiteBoardManager(
                 }
             }
             return super.shouldInterceptRequest(view, request)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            view?.let {
+                BoardStyleInjector.injectBoardStyles(it)
+            }
         }
     }
     private val curDrawingConfig = WhiteboardDrawingConfig()
@@ -117,15 +127,6 @@ class WhiteBoardManager(
         whiteBoardView.settings.allowFileAccessFromFileURLs = true
         whiteBoardView.webViewClient = webViewClient
         whiteBoardView.setOnTouchListener(onTouchListener)
-//        whiteBoardView.addOnLayoutChangeListener { v: View?, left: Int, top: Int, right: Int,
-//                                                   bottom: Int, oldLeft: Int, oldTop: Int,
-//                                                   oldRight: Int, oldBottom: Int ->
-//            if (context is Activity && (context.isFinishing) ||
-//                    (context as Activity).isDestroyed) {
-//                return@addOnLayoutChangeListener
-//            }
-//            boardProxy.refreshViewSize()
-//        }
         whiteboardContext.getHandlers()?.forEach {
             it.onDrawingEnabled(!boardProxy.isDisableDeviceInputs)
             it.onPagingEnabled(!boardProxy.isDisableDeviceInputs)
@@ -177,6 +178,7 @@ class WhiteBoardManager(
         curLocalUuid = uuid
         curLocalToken = boardToken
         this.localUserUuid = localUserUuid
+
         whiteBoardViewContainer.post {
             boardProxy.getRoomPhase(object : Promise<RoomPhase> {
                 override fun then(phase: RoomPhase) {
@@ -188,6 +190,21 @@ class WhiteBoardManager(
                         val params = RoomParams(uuid, boardToken)
                         params.cameraBound = CameraBound(miniScale, maxScale)
                         params.isDisableNewPencil = false
+                        params.useMultiViews = true
+
+                        val collectorStyleMap = HashMap<String, String>()
+                        collectorStyleMap["position"] = "fixed"
+                        collectorStyleMap["left"] = "60px"
+                        collectorStyleMap["bottom"] = "12px"
+
+                        val ratio = whiteBoardViewContainer.height /
+                                whiteBoardViewContainer.width.toFloat()
+                        params.windowParams = WindowParams()
+                        params.windowParams
+                            .setCollectorStyles(collectorStyleMap)
+                            .setChessboard(false)
+                            .setContainerSizeRatio(ratio)
+
                         boardProxy.init(whiteSdk, params)
                         ReportManager.getAPaasReporter().reportWhiteBoardStart()
                     }
@@ -362,15 +379,6 @@ class WhiteBoardManager(
     }
 
     private fun initWhiteBoardAppliance() {
-//        if (boardProxy.appliance == null) {
-//            boardProxy.appliance = SELECTOR
-//        }
-//        if (boardProxy.strokeColor == null) {
-//            boardProxy.strokeColor = ColorUtil.colorToArray(context.resources.getColor(R.color.agora_board_default_stroke))
-//        }
-//        if (boardProxy.textSize == null) {
-//            boardProxy.textSize = context.resources.getInteger(R.integer.agora_board_default_font_size).toDouble()
-//        }
         if (!TextUtils.isEmpty(boardProxy.appliance)) {
             onApplianceSelected(curDrawingConfig.activeAppliance)
         } else {
@@ -592,11 +600,29 @@ class WhiteBoardManager(
                     }
                 }
             }
+
             if (grantChanted(latestBoardState)) {
                 boardProxy.follow(!latestBoardState.isGranted(localUserUuid))
                 // if granted，try recovery cameraConfig
                 recoveryCameraState2(state)
             }
+
+            // Check if user defined properties have changed.
+            // User defined properties are internal concepts, managed
+            // as part of the entire whiteboard global state.
+            // However, they are translated to "GlobalState"
+            // of whiteboard in the current room.
+            if (!state.userDefinedPropertyEquals(curBoardState)) {
+                whiteboardContext.getHandlers()?.forEach {
+                    it.onWhiteboardGlobalStateChanged(state.flexBoardState)
+                }
+            }
+
+            // whether ext app track states update
+            if (!state.extAppTracksEquals(curBoardState)) {
+                extAppTrackListener?.onExtAppTrackUpdated(state.extAppMovements)
+            }
+
             curBoardState = state
             if (!curBoardState!!.isTeacherFirstLogin && courseware != null && scenePpts != null
                     && loadPreviewPpt) {
@@ -636,6 +662,7 @@ class WhiteBoardManager(
                     curFollowState = follow
                 }
                 disableCameraTransform(!granted)
+                disableDeviceInputs(!granted)
                 val grantedUsers = curBoardState!!.grantUsers
                 if (curGrantedUsers != grantedUsers) {
                     curGrantedUsers.clear()
@@ -758,6 +785,33 @@ class WhiteBoardManager(
         Log.e(tag, "onNextPage")
         boardProxy.pptNextStep()
     }
+
+    fun getFlexWhiteboardState(): Map<String, Any> {
+        return curBoardState?.flexBoardState ?: mapOf()
+    }
+
+    fun setFlexWhiteboardState(properties: Map<String, Any>) {
+        val state = curBoardState?.copy() ?: BoardState()
+        state.flexBoardState = properties
+        boardProxy.setGlobalState(state)
+    }
+
+    internal fun setExtAppTrackInfo(identifier: String, userId: String, x: Float, y: Float) {
+        val state = curBoardState?.copy() ?: BoardState()
+        state.setExtAppMovement(identifier, userId, x, y)
+        boardProxy.setGlobalState(state)
+    }
+
+    fun getExtAppTrack(identifier: String): ExtAppPosition {
+        val track = ExtAppPosition()
+        curBoardState?.extAppMovements?.get(identifier)?.let {
+            track.userId = it.userId
+            track.x = it.x
+            track.y = it.y
+        }
+
+        return track
+    }
 }
 
 interface WhiteBoardManagerEventListener {
@@ -768,4 +822,42 @@ interface WhiteBoardManagerEventListener {
     fun onSceneChanged(state: SceneState)
 
     fun onGrantedChanged()
+}
+
+data class BoardStyleParams(
+    val left: Int = 0,
+    val bottom: Int = 0,
+    val styles: List<String>
+)
+
+internal object BoardStyleInjector {
+    private var left: Int = 0
+    private var bottom: Int = 0
+    private var styles: MutableList<String> = mutableListOf()
+
+    fun setPosition(left: Int = 0, bottom: Int = 0) {
+        this.left = left
+        this.bottom = bottom
+    }
+
+    fun addStyle(style: String) {
+        styles.add(style)
+    }
+
+    private const val javascriptFormat =
+        "var style = document.createElement('style');\n" +
+                "style.innerHTML = %s\n" +
+                "document.head.appendChild(style);"
+
+    fun injectBoardStyles(view: WebView) {
+        val locale = Locale.getDefault()
+        styles.forEach { js ->
+            injectBoardStyle(locale, view, js)
+        }
+    }
+
+    private fun injectBoardStyle(locale: Locale, view: WebView, attr: String) {
+        val js = String.format(locale, javascriptFormat, attr)
+        view.loadUrl("javascript: $js")
+    }
 }

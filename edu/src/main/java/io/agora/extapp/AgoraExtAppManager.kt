@@ -7,8 +7,10 @@ import androidx.annotation.UiThread
 import io.agora.base.network.RetrofitManager
 import io.agora.edu.classroom.bean.PropertyData
 import io.agora.edu.common.bean.ResponseBody
+import io.agora.edu.common.bean.board.BoardState
 import io.agora.edu.launch.AgoraEduSDK
 import io.agora.edu.util.TimeUtil
+import io.agora.educontext.EduContextPool
 import io.agora.extension.*
 import retrofit2.Call
 import retrofit2.Callback
@@ -18,13 +20,14 @@ abstract class AgoraExtAppManager(
         private val appId: String,
         private val context: Context,
         private val container: RelativeLayout,
-        private val roomUuid: String) : IAgoraExtAppAPaaSEntry {
+        private val roomUuid: String,
+        eduContext: EduContextPool) : IAgoraExtAppAPaaSEntry {
 
     private val tag = "AgoraExtAppManager"
     private val keyAppProperties = "extApps"
     private val keyAppCommon = "extAppsCommon"
 
-    private val extAppEngine = AgoraExtAppEngine(context, container, this)
+    private val extAppEngine = AgoraExtAppEngine(context, container, eduContext, this)
 
     fun launchExtApp(identifier: String, currentTime: Long) : Int {
         return extAppEngine.launchExtApp(identifier,false,currentTime)
@@ -47,13 +50,12 @@ abstract class AgoraExtAppManager(
             appMap.forEach { (s, any) ->
                 run {
                     Log.d(tag, "ext app initialize id $s, ${any.toString()}")
-                    val state = (roomProperties?.get(keyAppCommon) as Map<String, Any>)?.get(s)
+                    val state = (roomProperties?.get(keyAppCommon) as? Map<String, Any>)?.get(s)
                     val currentTime = TimeUtil.currentTimeMillis()
                     updateExtAppProperties(s, any as? MutableMap<String, Any?>,
                             null, state as? MutableMap<String, Any?>,currentTime)
                 }
             }
-
         }
     }
 
@@ -126,8 +128,8 @@ abstract class AgoraExtAppManager(
                 .enqueue(object : Callback<ResponseBody<String>> {
                     override fun onResponse(call: Call<ResponseBody<String>>,
                                             response: Response<ResponseBody<String>>) {
-                        response.body()?.data?.let {
-                            callback?.onSuccess(it)
+                        response.body()?.let {
+                            callback?.onSuccess(it.msg)
                         }
                     }
 
@@ -148,8 +150,8 @@ abstract class AgoraExtAppManager(
             AgoraExtAppService::class.java).deleteProperties(appId, roomUuid, identifier,
                 AgoraExtAppDeleteRequest(propertyKeys, cause)).enqueue(object : Callback<ResponseBody<String>> {
             override fun onResponse(call: Call<ResponseBody<String>>, response: Response<ResponseBody<String>>) {
-                response.body()?.data?.let {
-                    callback?.onSuccess(it)
+                response.body()?.let {
+                    callback?.onSuccess(it.msg)
                 }
             }
 
@@ -158,4 +160,24 @@ abstract class AgoraExtAppManager(
             }
         })
     }
+
+    fun updateExtAppTracksUpdates(map: Map<String, BoardState.ExtAppMovement>) {
+        map.forEach { entry ->
+            if (!entry.value.userId.isNullOrEmpty()) {
+                extAppEngine.onAppPositionSync(entry.key, entry.value.userId, entry.value.x, entry.value.y)
+            }
+        }
+    }
+
+    fun enableSendAppTracks(enable: Boolean) {
+        extAppEngine.enableSendExtAppTracks(enable)
+    }
+
+    fun setAppDraggable(draggable: Boolean) {
+        extAppEngine.setAppDraggable(draggable)
+    }
+}
+
+interface ExtAppTrackListener {
+    fun onExtAppTrackUpdated(map: Map<String, BoardState.ExtAppMovement>)
 }

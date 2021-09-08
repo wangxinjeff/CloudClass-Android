@@ -32,7 +32,7 @@ public class BoardProxy extends NetlessManager<Room> implements RoomCallbacks {
     private String appliance;
     private int[] strokeColor;
     private double strokeWidth = -100f, textSize = -100f;
-    private Boolean disableDeviceInputs;
+    private Boolean disableDeviceInputs = true;
     private Boolean disableCameraTransform;
     private Boolean writable;
 
@@ -54,27 +54,6 @@ public class BoardProxy extends NetlessManager<Room> implements RoomCallbacks {
     public void init(WhiteSdk sdk, RoomParams params) {
         this.whiteSdk = sdk;
         this.roomParams = params;
-//        if (t != null) {
-//            Log.i(TAG, "joinRoom-disconnect");
-//            disconnect(new Promise() {
-//                @Override
-//                public void then(Object o) {
-//                    Log.i(TAG, "joinRoom-disconnect-success");
-//                    Log.i(TAG, "joinRoom-");
-//                    sdk.joinRoom(params, BoardProxy.this, promise);
-//                }
-//
-//                @Override
-//                public void catchEx(SDKError t) {
-//                    Log.i(TAG, "joinRoom-disconnect-failed->" + t.getJsStack());
-//                    Log.i(TAG, "joinRoom-");
-//                    sdk.joinRoom(params, BoardProxy.this, promise);
-//                }
-//            });
-//        } else {
-//            Log.i(TAG, "joinRoom-");
-//            sdk.joinRoom(params, BoardProxy.this, promise);
-//        }
         Log.i(TAG, "joinRoom-");
         sdk.joinRoom(params, BoardProxy.this, promise);
     }
@@ -176,38 +155,38 @@ public class BoardProxy extends NetlessManager<Room> implements RoomCallbacks {
     }
 
     public void zoom(double scale) {
-        if (t != null && !isDisableCameraTransform()) {
-            CameraConfig cameraConfig = new CameraConfig();
-            cameraConfig.setScale(scale);
-            t.moveCamera(cameraConfig);
-        }
+//        if (t != null && !isDisableCameraTransform()) {
+//            CameraConfig cameraConfig = new CameraConfig();
+//            cameraConfig.setScale(scale);
+//            t.moveCamera(cameraConfig);
+//        }
     }
 
     public void moveCamera(CameraConfig cameraConfig) {
-        if (t != null) {
-            t.moveCamera(cameraConfig);
-            t.getRoomState();
-        }
+//        if (t != null) {
+//            t.moveCamera(cameraConfig);
+//            t.getRoomState();
+//        }
     }
 
     public void scalePptToFit() {
-        if (t != null) {
-            t.scalePptToFit();
-            t.scaleIframeToFit();
-        }
+//        if (t != null) {
+//            t.scalePptToFit();
+//            t.scaleIframeToFit();
+//        }
     }
 
     public void follow(boolean follow) {
-        if (t != null) {
-            t.setViewMode(follow ? ViewMode.Follower : ViewMode.Freedom);
-        }
+//        if (t != null) {
+//            t.setViewMode(follow ? ViewMode.Follower : ViewMode.Freedom);
+//        }
     }
 
     public void scalePptToFit(AnimationMode mode) {
-        if (t != null) {
-            t.scalePptToFit(mode);
-            t.scaleIframeToFit();
-        }
+//        if (t != null) {
+//            t.scalePptToFit(mode);
+//            t.scaleIframeToFit();
+//        }
     }
 
     public void hasBroadcaster(Promise<Boolean> promise) {
@@ -282,27 +261,27 @@ public class BoardProxy extends NetlessManager<Room> implements RoomCallbacks {
     }
 
     public void putScenes(String dir, Scene[] scenes, int index) {
-        if (t != null) {
-            t.putScenes(dir, scenes, index);
-        }
+//        if (t != null) {
+//            t.putScenes(dir, scenes, index);
+//        }
     }
 
     public void setScenePath(String path, final Promise<Boolean> promise) {
-        if (t != null) {
-            t.setScenePath(path, promise);
-        }
+//        if (t != null) {
+//            t.setScenePath(path, promise);
+//        }
     }
 
     public void setScenePath(String path) {
-        if (t != null) {
-            t.setScenePath(path);
-        }
+//        if (t != null) {
+//            t.setScenePath(path);
+//        }
     }
 
     public void getSceneState(Promise<SceneState> mise) {
-        if(t != null) {
-            t.getSceneState(mise);
-        }
+//        if (t != null) {
+//            t.getSceneState(mise);
+//        }
     }
 
     public void disableDeviceInputs(boolean disabled) {
@@ -351,6 +330,12 @@ public class BoardProxy extends NetlessManager<Room> implements RoomCallbacks {
     public void disconnect() {
         if (t != null) {
             t.disconnect();
+        }
+    }
+
+    public void setGlobalState(GlobalState state) {
+        if (t != null) {
+            t.setGlobalState(state);
         }
     }
 

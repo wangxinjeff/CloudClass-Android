@@ -21,21 +21,26 @@ class EaseRepository {
     var fetchMsgNum = 0
     var singleMuted = false
     var allMuted = false
+    var isInit = false
+    var isLogin = false
 
     /**
      * 加载本地消息
      */
     fun loadMessages(conversationId: String) {
-        val conversation = EMClient.getInstance().chatManager()
+        if(isInit) {
+            val conversation = EMClient.getInstance().chatManager()
                 .getConversation(conversationId, EMConversation.EMConversationType.ChatRoom, true)
-        val msgList = conversation.allMessages
-        val norMsgList = mutableListOf<EMMessage>()
-        for (message in msgList) {
-            if (message.type == EMMessage.Type.TXT || message.type == EMMessage.Type.CUSTOM)
-                norMsgList.add(message)
-        }
-        for (listener in listeners) {
-            listener.loadMessageFinish(norMsgList)
+            val msgList = conversation.allMessages
+            val norMsgList = mutableListOf<EMMessage>()
+            for (message in msgList) {
+                if (message.type == EMMessage.Type.TXT || message.type == EMMessage.Type.CUSTOM)
+                    norMsgList.add(message)
+            }
+
+            for (listener in listeners) {
+                listener.loadMessageFinish(norMsgList)
+            }
         }
     }
 
@@ -166,7 +171,9 @@ class EaseRepository {
         ThreadManager.instance.runOnMainThread {
             val conversation = EMClient.getInstance().chatManager().getConversation(conversationId, EMConversation.EMConversationType.ChatRoom, true)
             conversation.loadMoreMsgFromDB("", fetchMsgNum)
-            reset()
+            brokenMsgId = ""
+            lastMsgId = ""
+            fetchMsgNum = 0
             for (listener in listeners) {
                 listener.loadHistoryMessageFinish()
             }
@@ -284,6 +291,8 @@ class EaseRepository {
         fetchMsgNum = 0
         singleMuted = false
         allMuted = false
+        isInit = false
+        isLogin = false
     }
 
     fun addOperationListener(operationListener: EaseOperationListener) {

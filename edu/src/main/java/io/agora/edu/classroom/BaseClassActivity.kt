@@ -1,24 +1,19 @@
 package io.agora.edu.classroom
 
-import android.app.Activity
 import android.os.Bundle
 import android.util.Log
-import android.view.View
-import android.view.ViewGroup
-import android.view.ViewTreeObserver
-import android.view.WindowManager
+import android.view.*
 import android.widget.RelativeLayout
-import androidx.core.view.ViewCompat
 import io.agora.agoraactionprocess.AgoraActionListener
 import io.agora.agoraactionprocess.AgoraActionMsgRes
 import io.agora.base.callback.Callback
 import io.agora.edu.BuildConfig
+import io.agora.edu.common.bean.board.BoardState
 import io.agora.edu.common.bean.response.RoomPreCheckRes
 import io.agora.edu.launch.AgoraEduEvent
 import io.agora.edu.launch.AgoraEduLaunchConfig
 import io.agora.edu.launch.AgoraEduRoleType
 import io.agora.edu.launch.AgoraEduSDK
-import io.agora.edu.util.AppUtil.getNavigationBarHeight
 import io.agora.edu.util.TimeUtil
 import io.agora.edu.widget.EyeProtection
 import io.agora.education.api.EduCallback
@@ -45,7 +40,9 @@ import io.agora.education.impl.Constants.Companion.AgoraLog
 import io.agora.educontext.*
 import io.agora.educontext.context.*
 import io.agora.extapp.AgoraExtAppManager
+import io.agora.extapp.ExtAppTrackListener
 import io.agora.extension.*
+import io.agora.log.UploadManager
 import io.agora.privatechat.PrivateChatManager
 import io.agora.report.ReportManager.getAPaasReporter
 import io.agora.report.reporters.APaasReporter
@@ -54,10 +51,11 @@ import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcChannel
 import io.agora.rte.data.RteLocalVideoStats
 import io.agora.rte.data.RteRemoteVideoStats
+import io.agora.uikit.educontext.handlers.WhiteboardHandler
 import io.agora.uikit.impl.container.AgoraUI1v1Container
 import io.agora.uikit.impl.container.AgoraUILargeClassContainer
 import io.agora.uikit.impl.container.AgoraUISmallClassContainer
-import io.agora.uikit.impl.users.AgoraUIRoster
+import io.agora.uikit.impl.users.RosterType
 import io.agora.uikit.interfaces.protocols.IAgoraUIContainer
 
 abstract class BaseClassActivity : BaseActivity(),
@@ -78,6 +76,7 @@ abstract class BaseClassActivity : BaseActivity(),
     protected var preCheckData: RoomPreCheckRes? = null
     protected var eduRoom: EduRoom? = null
 
+    protected var activityLayout: RelativeLayout? = null
     protected var contentLayout: RelativeLayout? = null
 
     protected var container: IAgoraUIContainer? = null
@@ -259,11 +258,17 @@ abstract class BaseClassActivity : BaseActivity(),
             forceLeave(true)
         }
 
-        override fun uploadLog() {
-            eduManager?.uploadDebugItem(DebugItem.LOG, object : EduCallback<String> {
+        override fun uploadLog(quiet: Boolean) {
+            eduManager?.uploadDebugItem(DebugItem.LOG, UploadManager.UploadParamTag(
+                    launchConfig?.roomUuid,
+                    launchConfig?.roomName,
+                    launchConfig?.roomType ?: -1,
+                    launchConfig?.userUuid,
+                    launchConfig?.userName,
+                    launchConfig?.roleType ?: -1), object : EduCallback<String> {
                 override fun onSuccess(res: String?) {
                     AgoraLog.d(tag, "log updated ->$res");
-                    if (res != null) {
+                    if (res != null && !quiet) {
                         roomStateManager?.setUploadedLogMsg(res)
                     }
                 }
@@ -594,8 +599,8 @@ abstract class BaseClassActivity : BaseActivity(),
             userContext.getHandlers()?.forEach { handler ->
                 handler.onRoster(this@BaseClassActivity, anchor,
                         when (container) {
-                            is AgoraUISmallClassContainer -> AgoraUIRoster.RosterType.SmallClass.value()
-                            is AgoraUILargeClassContainer -> AgoraUIRoster.RosterType.LargeClass.value()
+                            is AgoraUISmallClassContainer -> RosterType.SmallClass.value()
+                            is AgoraUILargeClassContainer -> RosterType.LargeClass.value()
                             else -> null
                         })
             }
@@ -635,6 +640,14 @@ abstract class BaseClassActivity : BaseActivity(),
 
         override fun setNextPage() {
             whiteBoardManager?.onBoardNextPage()
+        }
+
+        override fun setWhiteboardGlobalState(state: Map<String, Any>) {
+            whiteBoardManager?.setFlexWhiteboardState(state)
+        }
+
+        override fun getWhiteboardGlobalState(): Map<String, Any> {
+            return whiteBoardManager?.getFlexWhiteboardState() ?: mapOf()
         }
     }
 
@@ -700,8 +713,16 @@ abstract class BaseClassActivity : BaseActivity(),
                     ?: AgoraExtAppErrorCode.ExtAppEngineError
         }
 
-        override fun getRegisteredExtApps(): List<AgoraExtAppInfo> {
-            return extAppManager?.getRegisteredApps() ?: mutableListOf()
+        override fun getRegisteredExtApps(): List<EduContextExtAppInfo> {
+            val result = mutableListOf<EduContextExtAppInfo>()
+            extAppManager?.getRegisteredApps()?.forEach {
+                result.add(EduContextExtAppInfo(
+                    it.appIdentifier,
+                    it.language,
+                    it.imageResource
+                ))
+            }
+            return result
         }
     }
 
@@ -796,7 +817,7 @@ abstract class BaseClassActivity : BaseActivity(),
 
     protected abstract fun onRoomJoinConfig(): JoinRoomConfiguration
 
-    open protected fun onRoomJoined(success: Boolean, student: EduStudent?, error: EduError? = null) {
+    protected open fun onRoomJoined(success: Boolean, student: EduStudent?, error: EduError? = null) {
         if (success) {
             eduContext.roomContext()?.getHandlers()?.forEach {
                 it.onJoinedClassRoom()
@@ -826,7 +847,8 @@ abstract class BaseClassActivity : BaseActivity(),
 
         isJoining = true
         val options = RoomJoinOptions(uuid!!, name, EduUserRole.STUDENT,
-                RoomMediaOptions(autoSubscribe, autoPublish), launchConfig?.roomType)
+                RoomMediaOptions(autoSubscribe, autoPublish), launchConfig?.roomType,
+                launchConfig?.videoEncoderConfig)
 
         eduRoom?.joinClassroom(options, object : EduCallback<EduUser> {
             override fun onSuccess(res: EduUser?) {
@@ -901,6 +923,11 @@ abstract class BaseClassActivity : BaseActivity(),
     private fun initEduCapabilityManagers(config: AgoraEduLaunchConfig, preCheckData: RoomPreCheckRes) {
         whiteBoardManager?.initBoardWithRoomToken(preCheckData.board.boardId,
                 preCheckData.board.boardToken, config.userUuid)
+        whiteBoardManager?.extAppTrackListener = object : ExtAppTrackListener {
+            override fun onExtAppTrackUpdated(map: Map<String, BoardState.ExtAppMovement>) {
+                extAppManager?.updateExtAppTracksUpdates(map)
+            }
+        }
 
         RoomStateManager(this, eduContext.roomContext(), config, preCheckData, eduRoom).let { manager ->
             roomStateManager = manager
@@ -1004,10 +1031,21 @@ abstract class BaseClassActivity : BaseActivity(),
 
             }
         })
+
+        // Whiteboard permission has a restriction to ext app behavior
+        // In the case when not granted the whiteboard permission, local
+        // user also cannot send ext app tracks to remote users.
+        whiteboardContext.addHandler(object : WhiteboardHandler() {
+            override fun onPermissionGranted(granted: Boolean) {
+                extAppManager?.enableSendAppTracks(granted)
+                extAppManager?.setAppDraggable(granted)
+            }
+        })
     }
 
     private fun initExtAppManager(layout: RelativeLayout, config: AgoraEduLaunchConfig) {
-        extAppManager = object : AgoraExtAppManager(config.appId, this, layout, config.roomUuid) {
+        extAppManager = object : AgoraExtAppManager(config.appId, this,
+            layout, config.roomUuid, eduContext) {
             override fun getRoomInfo(): AgoraExtAppRoomInfo {
                 return AgoraExtAppRoomInfo(
                         config.roomUuid,
@@ -1018,6 +1056,14 @@ abstract class BaseClassActivity : BaseActivity(),
             override fun getLocalUserInfo(): AgoraExtAppUserInfo {
                 return AgoraExtAppUserInfo(config.userUuid, config.userName,
                         AgoraExtAppUserRole.toType(config.roleType))
+            }
+
+            override fun syncAppPosition(identifier: String, userId: String, x: Float, y: Float) {
+                whiteBoardManager?.setExtAppTrackInfo(identifier, userId, x, y)
+            }
+
+            override fun getAppPosition(identifier: String): ExtAppPosition {
+                return whiteBoardManager?.getExtAppTrack(identifier) ?: ExtAppPosition()
             }
         }
 
@@ -1036,11 +1082,14 @@ abstract class BaseClassActivity : BaseActivity(),
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        window.setFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
         super.onCreate(savedInstanceState)
         val view = onContentViewLayout()
-        view.fitsSystemWindows = true
+        view.fitsSystemWindows = false
         setContentView(view)
         initData()
     }
@@ -1071,41 +1120,18 @@ abstract class BaseClassActivity : BaseActivity(),
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        isNavigationBarChanged(this, object : OnNavigationStateListener {
-            override fun onNavigationState(isShowing: Boolean, b: Int) {
-                Log.e(tag, "isNavigationBarExist->$isShowing")
-                contentLayout?.viewTreeObserver?.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-                    override fun onGlobalLayout() {
-                        contentLayout?.viewTreeObserver?.removeOnGlobalLayoutListener(this)
-                        val w = contentLayout!!.width
-                        val h = contentLayout!!.height
-                        container?.resize(contentLayout!!, 0, 0, w, h)
-                    }
-                })
-            }
-        })
-    }
 
-    private fun isNavigationBarChanged(
-            activity: Activity,
-            onNavigationStateListener: OnNavigationStateListener?
-    ) {
-        val height: Int = getNavigationBarHeight(activity)
-        ViewCompat.setOnApplyWindowInsetsListener(activity.window.decorView) { v, insets ->
-            var isShowing = false
-            var l = 0
-            var r = 0
-            var b = 0
-            if (insets != null) {
-                l = insets.systemWindowInsetLeft
-                r = insets.systemWindowInsetRight
-                b = insets.systemWindowInsetBottom
-                isShowing = l == height || r == height || b == height
+        val flag = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        window?.decorView?.systemUiVisibility = flag
+        window?.decorView?.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                window?.decorView?.systemUiVisibility = flag
             }
-            if (onNavigationStateListener != null && b <= height) {
-                onNavigationStateListener.onNavigationState(isShowing, b)
-            }
-            ViewCompat.onApplyWindowInsets(v, insets)
         }
     }
 
@@ -1366,6 +1392,8 @@ abstract class BaseClassActivity : BaseActivity(),
             VideoSourceType.SCREEN -> {
             }
         }
+
+        deviceManager?.checkDeviceConfig()
     }
 
     override fun onLocalStreamRemoved(streamEvent: EduStreamEvent) {

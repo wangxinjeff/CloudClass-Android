@@ -71,7 +71,10 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
 
-    api project(path: ':agoraui')
+    implementation project(path: ':agoraui')
+    implementation project(path: ':educontext')
+    implementation project(path: ':widget')
+    implementation project(path: ':extapp')
 
     implementation "com.google.android.material:material:${safeExtGet('dependencies', 'com.google.android.material:material', '1.2.1')}"
 
@@ -100,4 +103,6 @@ dependencies {
     implementation "com.github.agorabuilder:agora-special-full:${safeExtGet('dependencies', 'com.github.agorabuilder:agora-special-full', rootProject.ext.android.rtcSDKVersion)}"
     implementation "com.github.agorabuilder:rtm-sdk:${safeExtGet('dependencies', 'com.github.agorabuilder:rtm-sdk', rootProject.ext.android.rtmSDKVersion)}"
     implementation "com.github.duty-os:white-sdk-android:${safeExtGet('dependencies', 'com.github.duty-os:white-sdk-android', rootProject.ext.android.boardSDKVersion)}"
+
+//    implementation "com.github.duty-os:white-sdk-android:22bed1cd61"
 }
